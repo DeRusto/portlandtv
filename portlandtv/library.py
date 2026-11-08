@@ -35,12 +35,22 @@ def scan_shows(libraries):
     return shows
 
 
+def _files(libraries, kind):
+    """Every playable file at any depth of every Library of this kind."""
+    return sorted(os.path.join(dirpath, f)
+                  for lib in libraries if lib.get("kind") == kind
+                  for dirpath, _, files in os.walk(lib["path"])
+                  for f in files if os.path.splitext(f)[1].lower() in VIDEO)
+
+
+def scan_filler(libraries):
+    """Every playable file at any depth of every `filler` Library (no extras filtering)."""
+    return _files(libraries, "filler")
+
+
 def scan_movies(libraries):
-    """Every video file at any depth in a `movies` Library, one movie each.
+    """Every playable file at any depth of every `movies` Library, one movie each.
 
     shortcut: extras are not skipped yet, the scanner ticket (#22) adds that.
     """
-    return sorted(os.path.join(dirpath, f)
-                  for lib in libraries if lib.get("kind") == "movies"
-                  for dirpath, _, files in os.walk(lib["path"]) for f in files
-                  if os.path.splitext(f)[1].lower() in VIDEO)
+    return _files(libraries, "movies")

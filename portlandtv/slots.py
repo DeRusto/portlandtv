@@ -1,5 +1,5 @@
 """Slot resolver: fills one Slot's rule with a concrete item, advancing the state."""
-import random
+from portlandtv import deck
 
 
 class Missing(LookupError):
@@ -46,16 +46,7 @@ def _movie(movies, state):
     """Draw from a shuffled deck keyed by path; none repeats until it is used up."""
     if not movies:
         raise Missing("no movies in any movies Library")
-    deck = state.setdefault("movies", {"deck": [], "aired": []})
-    present = set(movies)
-    deck["deck"] = [p for p in deck["deck"] if p in present]
-    deck["aired"] = [p for p in deck["aired"] if p in present]
-    known = set(deck["deck"]) | set(deck["aired"])
-    for p in movies:
-        if p not in known:  # shuffle new files into the remaining deck
-            deck["deck"].insert(random.randint(0, len(deck["deck"])), p)
-    if not deck["deck"]:
-        deck["deck"], deck["aired"] = random.sample(movies, len(movies)), []
-    path = deck["deck"].pop(0)
-    deck["aired"].append(path)
+    movie_deck = state.setdefault("movies", {})
+    path = deck.peek(movie_deck, movies)
+    deck.take(movie_deck)
     return path

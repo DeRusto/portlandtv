@@ -16,7 +16,8 @@ def utc(*args):
 
 
 class Station:
-    def __init__(self, config, files=(), durations=None, now=None, movies=None):
+    def __init__(self, config, files=(), durations=None, now=None, filler=None,
+                 movies=None):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         self.library = os.path.join(self.root, "shows")
@@ -29,6 +30,14 @@ class Station:
             libraries.append({"path": os.path.join(self.root, "movies"), "kind": "movies"})
             for rel in movies:
                 self.add_file("movies/" + rel)
+        if filler is not None:  # rel paths under a `filler` Library; [] = empty folder
+            self.filler = os.path.join(self.root, "filler")
+            os.makedirs(self.filler)
+            for rel in filler:
+                path = os.path.join(self.filler, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").close()
+            libraries.append({"path": self.filler, "kind": "filler"})
         config = {"libraries": libraries, **config}
         self.config_path = os.path.join(self.root, "portlandtv.yaml")
         with open(self.config_path, "w") as f:

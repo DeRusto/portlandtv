@@ -44,14 +44,14 @@ class Service:
             return
         before = store.read_json(self.state_path, {"shows": {}})
         shows = library.scan_shows(cfg["libraries"])
-        program, picks, after, problems = day.build(
+        program, picks, after, never_fits, problems = day.build(
             cfg, shows, before, self.prober, self._placeholder(),
-            movies=library.scan_movies(cfg["libraries"]))
+            library.scan_filler(cfg["libraries"]), library.scan_movies(cfg["libraries"]))
         d = date.isoformat()
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})
         store.write_json(record_path, {"slots": picks, "problems": problems,
-                                       "state_before": before})
+                                       "state_before": before, "never_fits": never_fits})
         store.write_json(self.state_path, after)
 
     def _placeholder(self):
