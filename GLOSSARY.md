@@ -17,7 +17,7 @@ An ordered run of programming items (e.g. 8 hours) that forms the unit of repeti
 _Avoid_: Playlist, segment
 
 **Day Schedule**:
-The sequence of Blocks, each with a repeat count, that fills one broadcast day on a Channel.
+The sequence of Blocks, each with a length and a repeat count, that exactly fills one Broadcast Day on a Channel; the same Day Schedule runs every Broadcast Day.
 _Avoid_: Lineup, rotation
 
 **Slot**:
