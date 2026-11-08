@@ -8,6 +8,10 @@ A self-hosted linear TV channel built from a personal library of shows and movie
 A single continuous linear stream of programming that viewers tune into.
 _Avoid_: Station, feed
 
+**Library**:
+A folder of shows or movies that a Channel draws programming from; a Channel may draw from several.
+_Avoid_: Source, collection
+
 **Block**:
 An ordered run of programming items (e.g. 8 hours) that forms the unit of repetition.
 _Avoid_: Playlist, segment
