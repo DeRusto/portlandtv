@@ -13,6 +13,7 @@
   {% if key and key not in known %}<option value="{{ key }}" selected>{{ key }} (missing)</option>{% endif %}
   {% for value, text in choices %}<option value="{{ value }}"{% if value == key %} selected{% endif %}>{{ text }}</option>{% endfor %}
 </select>{% endmacro %}
+{% macro bg(colour) %}{% if colour %} style="background:{{ colour }}"{% endif %}{% endmacro %}
 <h1>PortlandTV</h1>
 <form method="post" action="/">
   <div class="sticky">
@@ -20,7 +21,32 @@
     <button class="primary" name="action" value="save">Save</button>
     <span id="left" class="{{ 'ok' if left == '0h00' else 'bad' }}">Still to assign: {{ left }}</span>
     {% if error %}<span class="bad" role="alert">Not saved: {{ error }}</span>{% endif %}
+    {% if refused %}<span class="bad" role="alert">Distribute refused: {{ refused }}</span>{% endif %}
   </div>
+
+  {% macro grid(rows, side) %}<table class="week">
+    <tr><th>Slot</th>{% for d in days %}<th>{{ d }}</th>{% endfor %}</tr>
+    {% for r in rows %}<tr><td class="nowrap">{{ r.name }}</td>{% for c in r[side] %}<td{% if c.changed %} class="changed"{% elif not c.colour %} class="empty"{% endif %}{{ bg(c.colour) }}>{{ c.label }}</td>{% endfor %}</tr>
+    {% endfor %}
+  </table>{% endmacro %}
+  {% if dialog %}
+  <div class="modal-bg">
+    <section class="card modal" id="distribute" role="dialog" aria-modal="true" aria-labelledby="distribute-title">
+      <h2 id="distribute-title">Replace every distributed cell?</h2>
+      <p class="mute">Distribute overwrites hand edits in distributed Slots. Changed cells are outlined.</p>
+      <div class="row">
+        <div class="grow scroll"><h3>Now</h3>{{ grid(dialog.rows, "now") }}</div>
+        <div class="grow scroll"><h3>After distributing</h3>{{ grid(dialog.rows, "then") }}</div>
+      </div>
+      <h3>Weeks left</h3>
+      <table><tr><th>Entry</th><th>Now</th><th>After</th></tr>
+        {% for label, now, then in dialog.weeks %}<tr><td>{{ label }}</td><td>{{ now }}</td><td>{{ then }}</td></tr>
+        {% endfor %}</table>
+      <p class="actions"><button name="action" value="cancel">Cancel</button>
+        <button class="primary" name="action" value="replace">Replace {{ dialog.changed }} cells</button></p>
+    </section>
+  </div>
+  {% endif %}
 
   <div class="row">
     <main class="grow">
@@ -45,9 +71,9 @@
                 {% if not s.fixed %}data-confirm="Make this Slot fixed? It keeps Monday's rule; the other six days are discarded."{% endif %}
                 aria-label="Switch Slot {{ j + 1 }} to {{ 'distributed' if s.fixed else 'fixed' }}">{{ 'fixed' if s.fixed else 'distributed' }}</button></td>
             {% if s.fixed %}
-            <td colspan="7" class="cell{% if not s.cells[0] %} empty{% endif %}" data-rule="{{ s.cells[0] }}">{{ rule_select("b%d.s%d.rule" % (i, j), s.cells[0], "Block %d Slot %d rule" % (i + 1, j + 1)) }} <span class="mute">· every day</span></td>
+            <td colspan="7" class="cell{% if not s.cells[0] %} empty{% endif %}" data-rule="{{ s.cells[0] }}"{{ bg(s.colours[0]) }}>{{ rule_select("b%d.s%d.rule" % (i, j), s.cells[0], "Block %d Slot %d rule" % (i + 1, j + 1)) }} <span class="mute">· every day</span></td>
             {% else %}{% for key in s.cells %}
-            <td class="cell{% if not key %} empty{% endif %}" data-rule="{{ key }}">{{ rule_select("b%d.s%d.%s" % (i, j, days[loop.index0] | lower), key, "Block %d Slot %d %s" % (i + 1, j + 1, days[loop.index0])) }}</td>
+            <td class="cell{% if not key %} empty{% endif %}" data-rule="{{ key }}"{{ bg(s.colours[loop.index0]) }}>{{ rule_select("b%d.s%d.%s" % (i, j, days[loop.index0] | lower), key, "Block %d Slot %d %s" % (i + 1, j + 1, days[loop.index0])) }}</td>
             {% endfor %}{% endif %}
             <td class="nowrap">
               <button class="small" name="action" value="up-slot:{{ i }}:{{ j }}" aria-label="Move up">↑</button>
@@ -82,12 +108,32 @@
       <button class="small" name="action" value="add-lib">Add Library</button>
     </main>
 
-    <aside class="side card" id="problems">
+    <div class="side">
+    <aside class="card" id="show-list">
+      <h2>Show List</h2>
+      <table>
+        <tr><th></th><th>Entry</th><th>Eps left</th><th>Cells/wk</th><th>Weeks left</th><th></th></tr>
+        {% for e in show_list %}{% set k = loop.index0 %}
+        <tr class="entry"><td class="swatch" style="background:{{ e.colour }}"></td><td>{{ e.label }}</td><td>{{ e.left }}</td><td>{{ e.cells }}</td><td>{{ e.weeks }}</td>
+          <td class="nowrap"><input type="hidden" name="sl{{ k }}" value="{{ e.key }}">
+            <button class="small" name="action" value="up-entry:{{ k }}" aria-label="Move {{ e.label }} up">↑</button>
+            <button class="small" name="action" value="down-entry:{{ k }}" aria-label="Move {{ e.label }} down">↓</button>
+            <button class="small" name="action" value="del-entry:{{ k }}" aria-label="Remove {{ e.label }}">×</button></td></tr>
+        {% endfor %}
+      </table>
+      <p><select name="sl.add" aria-label="Show or Show Group to add">
+        <option value="">— add a show or Show Group</option>
+        {% for value, text in add %}<option value="{{ value }}">{{ text }}</option>{% endfor %}
+      </select> <button class="small" name="action" value="add-entry">Add</button></p>
+      <button name="action" value="distribute">Distribute…</button>
+    </aside>
+    <aside class="card" id="problems">
       <h2>Problems</h2>
       {% if problems %}
       <ul>{% for p in problems %}<li class="bad">{{ p }}</li>{% endfor %}</ul>
       {% else %}<p class="ok">None.</p>{% endif %}
     </aside>
+    </div>
   </div>
 </form>
 </body>

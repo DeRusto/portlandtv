@@ -67,6 +67,10 @@ def parse(raw):
         if not lib.get("path") or lib.get("kind") not in KINDS:
             raise ConfigError(f"bad Library {lib!r}, it needs a path and a kind of "
                               + ", ".join(KINDS))
+    show_list = raw.get("show_list") or []
+    for e in show_list:
+        if not isinstance(e, dict) or len(e) != 1 or next(iter(e)) not in ("show", "group"):
+            raise ConfigError(f"bad Show List entry {e!r}, use {{show: X}} or {{group: X}}")
     blocks = []
     for b in raw.get("day_schedule") or []:
         slots = []
@@ -87,4 +91,5 @@ def parse(raw):
     if total != DAY:
         raise ConfigError(f"Day Schedule totals {total / 3600:g} h, it must be exactly 24 h")
     return {"libraries": raw.get("libraries") or [], "day_start": day_start,
-            "day_schedule": blocks, "show_groups": raw.get("show_groups") or {}}
+            "day_schedule": blocks, "show_groups": raw.get("show_groups") or {},
+            "show_list": show_list}

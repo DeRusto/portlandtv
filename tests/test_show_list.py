@@ -1,0 +1,186 @@
+"""Seam 2: the Show List panel and Distribute, over HTTP."""
+import json
+import os
+import unittest
+
+from tests.harness import Station
+from tests.web_harness import Browser
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def eps(show, n):
+    return [f"{show}/{show} - S01E{e:02}.mkv" for e in range(1, n + 1)]
+
+
+# A has 8 episodes, B 2, C 1, D 3; every episode 600 s (the fake prober's default)
+FILES = eps("A", 8) + eps("B", 2) + eps("C", 1) + eps("D", 3)
+CONFIG = {
+    "show_list": [{"show": "A"}, {"show": "B"}, {"show": "C"}],
+    "day_schedule": [{"length": "24h", "repeat": 1, "slots": [
+        {"rule": {"show": "D"}},
+        {"weekdays": {"mon": {"show": "A"}, "tue": {"show": "A"}, "wed": {"show": "B"}}},
+        {"weekdays": {}}]}]}
+
+
+class ShowListTest(unittest.TestCase):
+    def open(self, config=CONFIG, state=None):
+        s = Station(config, FILES)
+        self.addCleanup(s.close)
+        if state:
+            with open(os.path.join(s.root, "state.json"), "w") as f:
+                json.dump(state, f)
+        b = Browser(s)
+        b.get()
+        return b
+
+    def entries(self, b):
+        f = b.fields()
+        return [f[f"sl{k}"] for k in range(len(f)) if f"sl{k}" in f]
+
+    def test_show_list_is_an_ordered_yaml_key_kept_on_save(self):
+        b = self.open()
+        self.assertEqual(self.entries(b), ["show:A", "show:B", "show:C"])
+        b.submit()
+        self.assertEqual(b.yaml()["show_list"], CONFIG["show_list"])
+
+    def test_show_list_entries_must_be_shows_or_show_groups(self):
+        s = Station({**CONFIG, "show_list": [{"movie": "random"}]}, FILES)
+        self.addCleanup(s.close)
+        s.tick()
+        self.assertIn("Show List", s.service.error)
+
+    def test_panel_shows_episodes_left_cells_and_weeks_left(self):
+        # A aired up to episode 2, so 6 left over 2 cells: 3.0 weeks
+        b = self.open(state={"shows": {"A": {"path": os.path.join(
+            "SHOWS", "A", "A - S01E02.mkv"), "key": [1, 2]}}})
+        self.assertIn('<tr class="entry"><td class="swatch" style="background:#cfe3ff"></td>'
+                      "<td>A</td><td>6</td><td>2</td><td>3.0</td>", b.html)
+        self.assertIn("<td>B</td><td>2</td><td>1</td><td>2.0</td>", b.html)
+        self.assertIn("<td>C</td><td>1</td><td>0</td><td>not scheduled</td>", b.html)
+
+    def test_show_group_entry_sums_its_members(self):
+        b = self.open({**CONFIG, "show_groups": {"G": ["B", "C"]},
+                       "show_list": [{"group": "G"}]})
+        self.assertIn("<td>Show Group: G</td><td>3</td><td>0</td><td>not scheduled</td>",
+                      b.html)
+
+    def test_entries_reorder_remove_and_add(self):
+        b = self.open()
+        b.submit("down-entry:0")
+        self.assertEqual(self.entries(b), ["show:B", "show:A", "show:C"])
+        b.submit("up-entry:2")
+        self.assertEqual(self.entries(b), ["show:B", "show:C", "show:A"])
+        b.submit("del-entry:1")
+        self.assertEqual(self.entries(b), ["show:B", "show:A"])
+        # the add dropdown offers only shows and Show Groups not yet in the list
+        self.assertIn('<option value="show:C">C</option>', b.html.split('name="sl.add"')[1])
+        self.assertNotIn('value="show:A"', b.html.split('name="sl.add"')[1].split("</select>")[0])
+        self.assertNotIn('value="movie:random"',
+                         b.html.split('name="sl.add"')[1].split("</select>")[0])
+        b.submit("add-entry", {"sl.add": "show:D"})
+        self.assertEqual(self.entries(b), ["show:B", "show:A", "show:D"])
+        b.submit()
+        self.assertEqual(b.yaml()["show_list"], [{"show": "B"}, {"show": "A"}, {"show": "D"}])
+
+    def test_removing_an_entry_leaves_the_grid_untouched(self):
+        b = self.open()
+        before = b.yaml()["day_schedule"]
+        b.submit("del-entry:0")
+        b.submit()
+        self.assertEqual(b.yaml()["day_schedule"], before)
+        self.assertEqual(b.yaml()["show_list"], [{"show": "B"}, {"show": "C"}])
+
+    def test_cells_coloured_by_entry_and_off_list_rules_grey(self):
+        b = self.open()
+        self.assertIn('<td class="cell" data-rule="show:A" style="background:#cfe3ff">', b.html)
+        self.assertIn('<td class="cell" data-rule="show:B" style="background:#d6f5d6">', b.html)
+        self.assertIn('<td colspan="7" class="cell" data-rule="show:D" style="background:#e6e6e6">',
+                      b.html)
+        self.assertIn('<option value="show:D" selected>D (not in list)</option>', b.html)
+        self.assertIn('<option value="show:A" selected>A</option>', b.html)
+
+    def test_problems_list_entries_without_cells_and_off_list_shows(self):
+        b = self.open({**CONFIG, "day_schedule": [{"length": "24h", "repeat": 1, "slots": [
+            {"weekdays": {"mon": {"show": "A"}, "tue": {"show": "D"}}}]}]})
+        problems = b.html.split('id="problems"')[1]
+        self.assertIn("Show List: B has no cells on the grid", problems)
+        self.assertIn("Show List: C has no cells on the grid", problems)
+        self.assertIn("D is on the grid but not in the Show List", problems)
+        self.assertNotIn("A has no cells", problems)
+
+
+
+class DistributeTest(unittest.TestCase):
+    open = ShowListTest.open
+
+    def cells(self, b, slot):
+        f = b.fields()
+        return [f[f"{slot}.{d}"] for d in DAYS]
+
+    def test_preview_shows_both_grids_changed_cells_and_weeks_left(self):
+        b = self.open()
+        before = b.yaml()
+        b.submit("distribute")
+        dialog = b.html.split('id="distribute"')[1]
+        self.assertIn("<h3>Now</h3>", dialog)
+        self.assertIn("<h3>After distributing</h3>", dialog)
+        # Slot 2 Wed..Sun and all of Slot 3 change
+        self.assertEqual(dialog.count('class="changed"'), 12)
+        self.assertIn('value="replace">Replace 12 cells</button>', dialog)
+        self.assertIn('value="cancel">Cancel</button>', dialog)
+        # weeks left: A 8 eps over 2 -> 9 cells, B 2 over 1 -> 3, C 1 over 0 -> 2
+        self.assertIn("<td>A</td><td>4.0</td><td>0.9</td>", dialog)
+        self.assertIn("<td>B</td><td>2.0</td><td>0.7</td>", dialog)
+        self.assertIn("<td>C</td><td>not scheduled</td><td>0.5</td>", dialog)
+        # nothing changes until the confirm
+        self.assertEqual(b.yaml(), before)
+        self.assertEqual(self.cells(b, "b0.s1")[:3], ["show:A", "show:A", "show:B"])
+
+    def test_confirm_writes_the_worked_example(self):
+        b = self.open()
+        b.submit("distribute")
+        b.submit("replace")
+        self.assertNotIn('id="distribute"', b.html)
+        a, bb, c = {"show": "A"}, {"show": "B"}, {"show": "C"}
+        self.assertEqual(b.yaml()["day_schedule"][0]["slots"], [
+            {"rule": {"show": "D"}},
+            {"weekdays": dict(zip(DAYS, [a] * 7))},
+            {"weekdays": dict(zip(DAYS, [a, a, bb, bb, bb, c, c]))}])
+        self.assertIn("<td>A</td><td>8</td><td>9</td><td>0.9</td>", b.html)
+
+    def test_cancel_leaves_everything_as_it_was(self):
+        b = self.open()
+        before = b.yaml()
+        b.submit("distribute")
+        b.submit("cancel")
+        self.assertNotIn('id="distribute"', b.html)
+        self.assertEqual(self.cells(b, "b0.s1")[:3], ["show:A", "show:A", "show:B"])
+        self.assertEqual(self.cells(b, "b0.s2"), [""] * 7)
+        self.assertEqual(b.yaml(), before)
+
+    def test_distribution_follows_list_order_and_is_deterministic(self):
+        b = self.open({**CONFIG, "show_list": [{"show": "C"}, {"show": "A"}, {"show": "B"}]})
+        b.submit("distribute")
+        b.submit("replace")
+        self.assertEqual(self.cells(b, "b0.s1"), ["show:C"] * 2 + ["show:A"] * 5)
+        self.assertEqual(self.cells(b, "b0.s2"), ["show:A"] * 4 + ["show:B"] * 3)
+
+    def test_refused_with_more_entries_than_cells(self):
+        groups = {f"G{n}": ["D"] for n in range(5)}
+        b = self.open({"show_groups": groups,
+                       "show_list": [{"show": "A"}, {"show": "B"}, {"show": "C"}]
+                       + [{"group": g} for g in groups],
+                       "day_schedule": [{"length": "24h", "repeat": 1, "slots": [
+                           {"weekdays": {"mon": {"show": "A"}}}]}]})
+        before = b.yaml()
+        b.submit("distribute")
+        self.assertNotIn('id="distribute"', b.html)
+        self.assertIn("Distribute refused: 8 Show List entries for 7 distributed cells",
+                      b.html)
+        b.submit("replace")
+        self.assertEqual(b.yaml(), before)
+
+
+if __name__ == "__main__":
+    unittest.main()
