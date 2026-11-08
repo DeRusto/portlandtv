@@ -29,7 +29,7 @@ An ordered list of shows that a Slot plays through one after another, as if they
 _Avoid_: Rotation, block
 
 **Broadcast Day**:
-The 24-hour period, starting at a configured clock time, over which a Day Schedule runs and Slots stay frozen.
+The 24-hour period, starting at a configured UTC clock time (no daylight-saving changes), over which a Day Schedule runs and Slots stay frozen.
 _Avoid_: Calendar day
 
 **Filler**:
