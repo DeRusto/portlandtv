@@ -10,23 +10,29 @@ EXTRAS = {"extras", "featurettes", "behind the scenes", "deleted scenes", "inter
           "scenes", "shorts", "trailers", "other", "sample", "samples"}
 EXTRA_FILE = re.compile(r"(^|[-._ ])(sample|trailer|featurette)$", re.I)
 SEASON_DIR = re.compile(r"season\s*(\d+)$", re.I)
-SXE = re.compile(r"s(\d+)e(\d+)", re.I)
+SXE = re.compile(r"s(\d+)e(\d+)|\b(\d{1,2})x(\d{2,3})\b", re.I)  # S01E02 or 1x02
 
 
 def natural(text):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", text.lower())]
 
 
+def file_episode(name):
+    """(season, episode, end of the match) from a SxxEyy or NxNN file name, else None."""
+    m = SXE.search(name)
+    return m and (int(m[1] or m[3]), int(m[2] or m[4]), m.end())
+
+
 def episode_key(path):
     """(season, episode): season from the nearest `Season NN` folder, else SxxEyy, else 1;
     episode from SxxEyy, else 0."""
-    sxe = SXE.search(os.path.basename(path))
-    episode = int(sxe[2]) if sxe else 0
+    sxe = file_episode(os.path.basename(path))
+    episode = sxe[1] if sxe else 0
     for part in reversed(os.path.normpath(os.path.dirname(path)).split(os.sep)):
         folder = SEASON_DIR.match(part)
         if folder:
             return int(folder[1]), episode
-    return (int(sxe[1]) if sxe else 1), episode
+    return (sxe[0] if sxe else 1), episode
 
 
 class CachedProber:

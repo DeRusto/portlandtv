@@ -4,6 +4,7 @@ import unittest
 
 from PIL import Image
 
+from portlandtv import cards
 from tests.harness import Channel, utc
 
 FILES = [
@@ -48,6 +49,32 @@ class NextUpCardTest(unittest.TestCase):
         s = Channel({"day_schedule": list(blocks)}, FILES)
         self.addCleanup(s.close)
         return s
+
+    def test_release_style_file_names_give_a_clean_episode_title(self):
+        s = Channel({"day_schedule": [block("8h", 3, "Show E", "Show E")]},
+                    ["Show E/Show.E.S01E01.Rescue.Mission.720p.WEB.x264-GRP.mkv",
+                     "Show E/Show_E_S01E02_Homecoming.mkv"])
+        self.addCleanup(s.close)
+        s.tick(utc(2026, 11, 9, 12, 0))
+        first = breaks(s.playlist("2026-11-09")["program"])[0]
+        self.assertEqual(card(first)["up_next"],
+                         {"name": "Show E", "subtitle": "Season 1 · Episode 2 · Homecoming"})
+        self.assertEqual(card(first)["then"][0],
+                         {"name": "Show E", "subtitle": "Season 1 · Episode 1 · Rescue Mission"})
+
+    def test_text_too_long_even_when_shrunk_stays_in_its_column(self):
+        long = "Show L - S01E02 - " + "A Very Long Title " * 12
+        s = Channel({"day_schedule": [block("8h", 3, "Show L", "Show L")]},
+                    ["Show L/Show L - S01E01.mkv", f"Show L/{long}.mkv"])
+        self.addCleanup(s.close)
+        s.tick(utc(2026, 11, 9, 12, 0))
+        # the card whose THEN row puts the long title in the first column
+        cards_ = breaks(s.playlist("2026-11-09")["program"])
+        with_long = next(c for c in cards_ if card(c)["then"]
+                         and card(c)["then"][0]["subtitle"].endswith("Title"))
+        with Image.open(with_long) as im:  # 1920x1080: column 1 ends at x=930, column 2 starts at 990
+            gap = [im.getpixel((x, y)) for x in range(935, 985) for y in range(790, 840)]
+        self.assertEqual(set(gap), {(0x0b, 0x0d, 0x12)})
 
     def test_card_names_next_item_and_the_two_after_it(self):
         s = self.channel(block("8h", 3, "Show A", "Show A", "Show B"))
@@ -141,6 +168,27 @@ class NextUpCardTest(unittest.TestCase):
         s.tick(utc(2026, 11, 10, 5, 0))
         self.assertIsNotNone(s.service.error)
         self.assertEqual(card(last), {"up_next": None, "then": []})
+
+
+class DescribeTest(unittest.TestCase):
+    def subtitle(self, path):
+        path = os.path.join(*path.split("/"))
+        return cards.describe(path, {path: "Show"})["subtitle"]
+
+    def test_release_tags_end_the_title(self):
+        self.assertEqual(self.subtitle("tv/Fallout/Season 1/s01e01.1080p.aac.repack.mkv"),
+                         "Season 1 · Episode 1")
+        self.assertEqual(self.subtitle("tv/X/S02E03.The.Proper.Way.PROPER.HDTV.mkv"),
+                         "Season 2 · Episode 3 · The Proper Way")
+
+    def test_tags_inside_words_are_kept(self):
+        self.assertEqual(self.subtitle("tv/X/S01E04 - Cobwebs and Webster.mkv"),
+                         "Season 1 · Episode 4 · Cobwebs and Webster")
+
+    def test_nxnn_names_and_the_season_folder_wins(self):
+        self.assertEqual(self.subtitle("tv/X/x.1x05.Gone.mkv"), "Season 1 · Episode 5 · Gone")
+        self.assertEqual(self.subtitle("tv/X/Season 3/x.S01E05.mkv"), "Season 3 · Episode 5")
+        self.assertEqual(self.subtitle("tv/X/x.1920x1080.mkv"), "")
 
 
 if __name__ == "__main__":
