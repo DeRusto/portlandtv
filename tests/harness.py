@@ -1,0 +1,59 @@
+"""Seam 1 harness: a temp directory with the YAML, Library folders of empty files
+and the state JSON, plus a Service wired to fakes."""
+import json
+import os
+import tempfile
+from datetime import datetime, timezone
+
+import yaml
+
+from portlandtv.service import Service
+from tests.fakes import FakeClock, FakeFfplayout, FakeProber
+
+
+def utc(*args):
+    return datetime(*args, tzinfo=timezone.utc)
+
+
+class Station:
+    def __init__(self, config, files=(), durations=None, now=None):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        self.library = os.path.join(self.root, "shows")
+        for rel in files:
+            path = os.path.join(self.library, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "w").close()
+        config = {"libraries": [{"path": self.library, "kind": "shows"}], **config}
+        self.config_path = os.path.join(self.root, "portlandtv.yaml")
+        with open(self.config_path, "w") as f:
+            yaml.safe_dump(config, f)
+        self.playlists = os.path.join(self.root, "playlists")
+        self.prober = FakeProber(durations)
+        self.clock = FakeClock(now or utc(2026, 11, 9, 12, 0))
+        self.ffplayout = FakeFfplayout()
+        self.service = Service(self.config_path, self.playlists,
+                               prober=self.prober, clock=self.clock,
+                               ffplayout=self.ffplayout)
+
+    def close(self):
+        self._tmp.cleanup()
+
+    def tick(self, now=None):
+        if now:
+            self.clock.now_value = now
+        self.service.tick()
+
+    def path(self, rel):
+        return os.path.join(self.library, rel)
+
+    def playlist(self, date):
+        path = os.path.join(self.playlists, date[:4], date[5:7], date + ".json")
+        if not os.path.exists(path):
+            return None
+        with open(path) as f:
+            return json.load(f)
+
+    def read_json(self, rel):
+        with open(os.path.join(self.root, rel)) as f:
+            return json.load(f)
