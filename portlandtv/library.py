@@ -111,3 +111,9 @@ def scan_filler(libraries):
             clips += [os.path.join(dirpath, f) for f in files
                       if not f.startswith(".") and os.path.splitext(f)[1].lower() in VIDEO]
     return sorted(clips)
+
+
+def scan_movies(libraries):
+    """Every non-extra video file at any depth of every `movies` Library, one movie each."""
+    return sorted(path for lib in libraries if lib.get("kind") == "movies"
+                  for path in _videos(lib["path"]))

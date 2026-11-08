@@ -17,7 +17,7 @@ def utc(*args):
 
 class Station:
     def __init__(self, config, files=(), durations=None, now=None, filler=None,
-                 more_shows=None):
+                 more_shows=None, movies=None):
         """`more_shows`: {folder name under root: [rel paths]}, extra `shows` Libraries."""
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
@@ -29,6 +29,10 @@ class Station:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 open(path, "w").close()
         libraries = [{"path": os.path.join(self.root, lib), "kind": "shows"} for lib in shows]
+        if movies is not None:  # rel paths under a `movies` Library
+            libraries.append({"path": os.path.join(self.root, "movies"), "kind": "movies"})
+            for rel in movies:
+                self.add_file("movies/" + rel)
         if filler is not None:  # rel paths under a `filler` Library; [] = empty folder
             self.filler = os.path.join(self.root, "filler")
             os.makedirs(self.filler)
@@ -59,6 +63,16 @@ class Station:
 
     def path(self, rel):
         return os.path.join(self.library, rel)
+
+    def add_file(self, rel):
+        """Create an empty file at `rel` under the root (e.g. "movies/x.mkv")."""
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").close()
+
+    def rel(self, path):
+        """A playlist source as a path relative to the root's Library folders."""
+        return os.path.relpath(path, os.path.dirname(self.library)).split(os.sep, 1)[1]
 
     def playlist(self, date):
         path = os.path.join(self.playlists, date[:4], date[5:7], date + ".json")

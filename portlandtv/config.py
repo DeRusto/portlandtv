@@ -5,7 +5,7 @@ from datetime import time
 import yaml
 
 DAY = 24 * 3600
-RULES = {"show"}
+RULES = {"show", "group", "movie"}
 
 
 class ConfigError(ValueError):
@@ -44,4 +44,4 @@ def load(path):
     if total != DAY:
         raise ConfigError(f"Day Schedule totals {total / 3600:g} h, it must be exactly 24 h")
     return {"libraries": raw.get("libraries") or [], "day_start": day_start,
-            "day_schedule": blocks}
+            "day_schedule": blocks, "show_groups": raw.get("show_groups") or {}}
