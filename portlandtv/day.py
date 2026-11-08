@@ -1,28 +1,40 @@
 """Day builder: fill each Slot once, lay out Breaks, write each Airing N times."""
 import copy
 
-
-def next_episode(shows, state, name):
-    """The episode after the show's last-aired file; advances `state` in place."""
-    eps = shows[name]
-    last = state["shows"].get(name, {}).get("path")
-    path = eps[(eps.index(last) + 1) % len(eps)] if last in eps else eps[0]
-    state["shows"][name] = {"path": path}
-    return path
+from portlandtv import slots
 
 
-def build(cfg, shows, state, prober, card):
-    """-> (ffplayout program, the item picked for each Slot, the advanced state)."""
-    state = copy.deepcopy(state)
-    program, picks = [], []
-    for block in cfg["day_schedule"]:
-        items = [next_episode(shows, state, rule["show"]) for rule in block["slots"]]
+def build(cfg, shows, state, prober, card, movies=()):
+    """-> (ffplayout program, the items picked per Block, the advanced state, problems).
+
+    A Slot naming something missing is dropped and flagged; once a Slot overruns its
+    Block, it and the Slots after it are dropped. Dropped Slots advance nothing.
+    """
+    program, picks, problems = [], [], []
+    for b, block in enumerate(cfg["day_schedule"], 1):
+        items, lengths = [], []
+        for s, rule in enumerate(block["slots"], 1):
+            trial = copy.deepcopy(state)
+            try:
+                path = slots.resolve(rule, shows, movies, cfg["show_groups"], trial)
+            except slots.Missing as e:
+                problems.append(f"Block {b} Slot {s}: {e}")
+                continue
+            length = prober.duration(path)
+            if sum(lengths) + length > block["length"]:
+                break
+            items.append(path)
+            lengths.append(length)
+            state = trial
         picks.append(items)
-        lengths = [prober.duration(p) for p in items]
-        brk = (block["length"] - sum(lengths)) / len(items)
-        airing = []
-        for path, length in zip(items, lengths):
-            airing.append({"in": 0, "out": length, "duration": length, "source": path})
-            airing.append({"in": 0, "out": brk, "duration": brk, "source": card})
+        if not items:
+            airing = [{"in": 0, "out": block["length"], "duration": block["length"],
+                       "source": card}]
+        else:
+            brk = (block["length"] - sum(lengths)) / len(items)
+            airing = []
+            for path, length in zip(items, lengths):
+                airing.append({"in": 0, "out": length, "duration": length, "source": path})
+                airing.append({"in": 0, "out": brk, "duration": brk, "source": card})
         program += airing * block["repeat"]
-    return program, picks, state
+    return program, picks, state, problems

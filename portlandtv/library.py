@@ -33,3 +33,14 @@ def scan_shows(libraries):
     for eps in shows.values():
         eps.sort(key=_episode_key)
     return shows
+
+
+def scan_movies(libraries):
+    """Every video file at any depth in a `movies` Library, one movie each.
+
+    shortcut: extras are not skipped yet, the scanner ticket (#22) adds that.
+    """
+    return sorted(os.path.join(dirpath, f)
+                  for lib in libraries if lib.get("kind") == "movies"
+                  for dirpath, _, files in os.walk(lib["path"]) for f in files
+                  if os.path.splitext(f)[1].lower() in VIDEO)

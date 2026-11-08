@@ -16,7 +16,7 @@ def utc(*args):
 
 
 class Station:
-    def __init__(self, config, files=(), durations=None, now=None):
+    def __init__(self, config, files=(), durations=None, now=None, movies=None):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         self.library = os.path.join(self.root, "shows")
@@ -24,7 +24,12 @@ class Station:
             path = os.path.join(self.library, rel)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "w").close()
-        config = {"libraries": [{"path": self.library, "kind": "shows"}], **config}
+        libraries = [{"path": self.library, "kind": "shows"}]
+        if movies is not None:  # rel paths under a `movies` Library
+            libraries.append({"path": os.path.join(self.root, "movies"), "kind": "movies"})
+            for rel in movies:
+                self.add_file("movies/" + rel)
+        config = {"libraries": libraries, **config}
         self.config_path = os.path.join(self.root, "portlandtv.yaml")
         with open(self.config_path, "w") as f:
             yaml.safe_dump(config, f)
@@ -46,6 +51,16 @@ class Station:
 
     def path(self, rel):
         return os.path.join(self.library, rel)
+
+    def add_file(self, rel):
+        """Create an empty file at `rel` under the root (e.g. "movies/x.mkv")."""
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").close()
+
+    def rel(self, path):
+        """A playlist source as a path relative to the root's Library folders."""
+        return os.path.relpath(path, os.path.dirname(self.library)).split(os.sep, 1)[1]
 
     def playlist(self, date):
         path = os.path.join(self.playlists, date[:4], date[5:7], date + ".json")
