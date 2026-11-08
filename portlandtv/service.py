@@ -18,6 +18,7 @@ class Service:
         self.data_dir = os.path.dirname(os.path.abspath(config_path))
         self.state_path = os.path.join(self.data_dir, "state.json")
         self.error = None  # last generation error, for the UI
+        self.push_error = None  # last failed push to ffplayout, for the UI
         self.unplayable = []  # files the last scan left out, for the UI
         self._lock = threading.RLock()  # the tick thread and web requests both build
 
@@ -29,10 +30,15 @@ class Service:
                 self._ensure(cfg, start.date())
                 if self.clock.now() >= start + timedelta(days=1) - LEAD:
                     self._ensure(cfg, start.date() + timedelta(days=1))
-                self._push_day_start(cfg)
                 self.error = None
             except Exception as e:  # recorded for the UI; the next tick retries
                 self.error = str(e)
+                return
+            try:
+                self._push_day_start(cfg)
+                self.push_error = None
+            except Exception as e:
+                self.push_error = str(e)
 
     def on_save(self):
         """After the YAML is saved: a generated day that hasn't started is regenerated

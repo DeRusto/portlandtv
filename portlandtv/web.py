@@ -140,6 +140,8 @@ def create_app(service):
         out = list(schedule)
         if service.error:
             out.append(f"Generation error: {service.error} (retrying)")
+        if service.push_error:
+            out.append(f"ffplayout push problem: {service.push_error} (retrying)")
         out += [f"Library missing: {p}" for p in missing_libs]
         out += [f"Unplayable: {p}" for p in service.unplayable]
         records = sorted(glob.glob(os.path.join(data_dir, "days", "*.json")))

@@ -49,10 +49,11 @@ def main():
         last = None
         while True:
             service.tick()
-            if service.error != last:  # journal only on change, not every minute
+            if (service.error, service.push_error) != last:  # journal only on change
                 print(f"generation error: {service.error}" if service.error else "generation ok",
-                      file=sys.stderr, flush=True)
-                last = service.error
+                      f"; ffplayout push problem: {service.push_error}" if service.push_error
+                      else "", sep="", file=sys.stderr, flush=True)
+                last = service.error, service.push_error
             time.sleep(TICK)
 
     threading.Thread(target=loop, daemon=True).start()

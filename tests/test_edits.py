@@ -97,8 +97,8 @@ class EditsTest(unittest.TestCase):
         self.assertEqual(s.ffplayout.calls, [("set_day_start", "06:00"),
                                              ("set_day_start", "07:00")])
 
-    def test_failed_push_is_shown_and_retried(self):
-        s, _ = self.open()
+    def test_failed_push_is_shown_as_a_push_problem_and_retried(self):
+        s, b = self.open()
         s.ffplayout.calls.clear()
         with open(s.config_path) as f:
             raw = yaml.safe_load(f)
@@ -107,10 +107,13 @@ class EditsTest(unittest.TestCase):
             yaml.safe_dump(raw, f)
         s.ffplayout.fail = OSError("ffplayout down")
         s.tick()
-        self.assertIn("ffplayout down", s.service.error)
+        self.assertIsNone(s.service.error)  # the days generated fine
+        b.get()
+        self.assertIn("ffplayout push problem: ffplayout down", b.html)
+        self.assertNotIn("Generation error", b.html)
         s.ffplayout.fail = None
         s.tick()
-        self.assertIsNone(s.service.error)
+        self.assertNotIn("ffplayout push problem", b.get())
         self.assertEqual(s.ffplayout.calls[-1], ("set_day_start", "07:00"))
 
     def test_unconfigured_ffplayout_still_generates_and_shows_the_push_error(self):
@@ -119,8 +122,9 @@ class EditsTest(unittest.TestCase):
         s.service.ffplayout = ffplayout.Unconfigured()
         s.tick()
         self.assertIsNotNone(s.playlist("2026-11-09"))
-        self.assertIn("FFPLAYOUT_URL", s.service.error)
-        self.assertIn("FFPLAYOUT_URL", Browser(s).get())
+        self.assertIsNone(s.service.error)
+        self.assertIn("ffplayout push problem: ffplayout login not set (FFPLAYOUT_URL",
+                      Browser(s).get())
 
 
 class RebuildWeekdayTest(unittest.TestCase):
