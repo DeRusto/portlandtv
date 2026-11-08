@@ -232,7 +232,9 @@ def create_app(service):
                 view["slots"].append({"fixed": fixed, "cells": keys, "colours": [
                     colour.get(k, OFF_LIST) if k else "" for k in keys]})
                 empty = [day.title() for day, r in zip(config.WEEKDAYS, rules) if not r]
-                if empty and not fixed:
+                if empty and fixed:
+                    schedule.append(f"Block {n} Slot {m} is empty every day: skipped")
+                elif empty:
                     schedule.append(f"Block {n} Slot {m} is empty on {', '.join(empty)}:"
                                     " skipped those days")
             view["fill"] = [{"content": _hm(t), "brk": _hm(length - t) if length else "?",

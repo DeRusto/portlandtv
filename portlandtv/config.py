@@ -80,8 +80,9 @@ def parse(raw):
                 if set(days) - set(WEEKDAYS):
                     raise ConfigError(f"bad weekdays {sorted(days)!r}, use mon .. sun")
                 slots.append([_rule(days[d]) if days.get(d) else {} for d in WEEKDAYS])
-            else:
-                slots.append([_rule(s.get("rule") or {})] * 7)
+            else:  # fixed: no rule is an empty rule every day
+                rule = s.get("rule")
+                slots.append([_rule(rule) if rule else {}] * 7)
         repeat = b.get("repeat", 1)
         if not str(repeat).isdigit() or int(repeat) < 1:
             raise ConfigError(f"bad Block repeat {repeat!r}, use a whole number from 1")

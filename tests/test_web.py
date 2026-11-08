@@ -66,7 +66,6 @@ class WebTest(unittest.TestCase):
         b = self.open()
         b.submit("add-block")
         b.submit("del-block:0", {"b2.length": "16h"})
-        self.assertEqual(b.submit().status_code, 400)  # the new Block's Slot has no rule
         b.submit(changes={"b1.s0.rule": "show:Show A"})
         blocks = b.yaml()["day_schedule"]
         self.assertEqual([(x["length"], x["repeat"]) for x in blocks], [("4h", 2), ("16h", 1)])
@@ -230,6 +229,17 @@ class WeekGridTest(unittest.TestCase):
         self.assertEqual(b.html.count('class="cell empty"'), 12)
         b.submit()
         self.assertEqual(b.yaml()["day_schedule"][0]["slots"][2], {"weekdays": {}})
+
+    def test_an_empty_fixed_slot_saves_hatched_and_flagged_and_is_skipped(self):
+        b = self.open(WEEK)
+        b.submit("add-slot:0")
+        r = b.submit()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(b.yaml()["day_schedule"][0]["slots"][2], {})
+        self.assertEqual(b.html.count('class="cell empty"'), 6)
+        self.assertIn("Block 1 Slot 3 is empty every day: skipped", b.html)
+        b.station.tick()
+        self.assertIsNone(b.station.service.error)
 
     def test_fill_row_shows_content_and_breaks_per_weekday(self):
         # Show A median 1300 s, Show B 1800 s; 8h Block
