@@ -180,6 +180,24 @@ class WebTest(unittest.TestCase):
         self.assertNotIn("Generation error", b.html)
         self.assertIsNotNone(b.channel.playlist("2026-11-09"))
 
+    def test_a_post_from_another_site_is_refused(self):
+        b = self.open()
+        before = b.yaml()
+        r = b.client.post("/", data={**b.fields(), "action": "save", "b0.repeat": "9"},
+                          headers={"Origin": "http://evil.example"})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(b.yaml(), before)
+
+    def test_badly_shaped_yaml_is_a_config_error_and_still_renders(self):
+        b = self.open()
+        with open(b.channel.config_path, "w") as f:
+            f.write("libraries: [/media/shows]\nday_schedule: [24h]\n")
+        b.channel.tick()
+        self.assertIn("bad Library", b.channel.service.error)
+        r = b.client.get("/")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("bad Library", r.get_data(as_text=True))
+
     def test_a_hand_edited_rule_with_two_keys_still_renders(self):
         b = self.open()
         with open(b.channel.config_path, "w") as f:

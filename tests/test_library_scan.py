@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 
@@ -47,6 +48,7 @@ class LibraryScanTest(unittest.TestCase):
             "Show/Trailers/i.mkv", "Show/Other/j.mkv", "Show/Sample/k.mkv",
             "Show/Season 00/Show - S00E01.mkv", "Show/Specials/Show - S00E02.mkv",
             "Show/Season 2/Show - S02E01.mkv",
+            "Show/Season 2/trailer.mkv", "Show/Season 2/sample.mp4",
         ], slots=3)
         s.tick(DAY1)
         self.assertEqual(self.aired(s, "2026-11-09"), [
@@ -140,6 +142,16 @@ class LibraryScanTest(unittest.TestCase):
         self.assertEqual(sorted(set(s.prober.calls)),
                          [s.path("Show/Season 1/Show - S01E02.mkv"),
                           s.path("Show/Season 1/Show - S01E03.mkv")])
+
+    def test_progress_survives_a_crash_between_the_day_record_and_the_state(self):
+        s = self.channel(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv",
+                          "Show/Season 1/Show - S01E03.mkv"], slots=1)
+        s.tick(DAY1)
+        # the day record was written, then the process died before state.json was
+        with open(s.service.paths.state, "w") as f:
+            json.dump(s.read_json("days/2026-11-09.json")["state_before"], f)
+        s.tick(DAY2)
+        self.assertEqual(self.aired(s, "2026-11-10"), ["shows/Show/Season 1/Show - S01E02.mkv"])
 
     def test_progress_stores_path_and_key(self):
         s = self.channel(["Show/Season 1/Show - S01E01.mkv", "Show/Season 2/Show - S02E05.mkv"],

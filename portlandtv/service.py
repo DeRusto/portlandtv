@@ -105,7 +105,10 @@ class Service:
     def _ensure(self, cfg, date):
         """Generate the Broadcast Day starting on `date` unless it already was."""
         if not os.path.exists(self.paths.day(date)):
-            self._build(cfg, date, store.read_json(self.paths.state, {"shows": {}}))
+            # the day before's record wins over state.json: a crash may have come between them
+            prev = store.read_json(self.paths.day(date - timedelta(days=1)), {})
+            before = prev.get("state_after") or store.read_json(self.paths.state, {"shows": {}})
+            self._build(cfg, date, before)
 
     def _build(self, cfg, date, before, kept=()):
         """Generate the Broadcast Day starting on `date` from the state `before` it."""
@@ -134,7 +137,8 @@ class Service:
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": built.program})
         store.write_json(record_path, {"slots": built.block_items, "problems": built.problems,
-                                       "state_before": before, "never_fits": built.never_fits,
+                                       "state_before": before, "state_after": built.state,
+                                       "never_fits": built.never_fits,
                                        "tail": sequence[-day.AHEAD:],
                                        "picked": built.slot_fills})
         store.write_json(self.paths.state, built.state)

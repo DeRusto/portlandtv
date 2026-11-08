@@ -8,7 +8,7 @@ VIDEO = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts",
          ".webm", ".flv"}
 EXTRAS = {"extras", "featurettes", "behind the scenes", "deleted scenes", "interviews",
           "scenes", "shorts", "trailers", "other", "sample", "samples"}
-EXTRA_FILE = re.compile(r"(-sample|\.sample|-trailer|-featurette)$", re.I)
+EXTRA_FILE = re.compile(r"(^|[-._ ])(sample|trailer|featurette)$", re.I)
 SEASON_DIR = re.compile(r"season\s*(\d+)$", re.I)
 SXE = re.compile(r"s(\d+)e(\d+)", re.I)
 

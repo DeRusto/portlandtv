@@ -8,8 +8,10 @@ import collections
 import os
 import statistics
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from flask import Flask, redirect, render_template, request
+from markupsafe import escape
 
 from portlandtv import config, distributor, library, slots, store
 
@@ -219,7 +221,8 @@ def create_app(service):
             return f"{n / count:.1f}" if count else "not scheduled"
 
         def cell(key, changed=False):
-            return {"label": names.get(key, "Random movie" if key else "— empty"),
+            label = "Random movie" if key == "movie:random" else key.partition(":")[2]
+            return {"label": names.get(key, label or "— empty"),
                     "colour": colour.get(key, OFF_LIST) if key else "", "changed": changed}
 
         show_list = [{"key": e, "label": names.get(e, e), "colour": colour[e], "left": n,
@@ -253,10 +256,23 @@ def create_app(service):
 
     @app.get("/")
     def index():
-        return render(config.read_raw(service.config_path))
+        raw = config.read_raw(service.config_path)
+        try:
+            return render(raw)
+        except Exception as e:  # a hand edit the editor can't show: say why, so it can be fixed by hand
+            try:
+                config.parse(raw)
+            except config.ConfigError as bad:
+                e = bad
+            return (f"<h1>PortlandTV</h1><p>The config file can't be shown in the editor: "
+                    f"{escape(str(e))}</p><p>Fix {escape(service.config_path)} by hand.</p>")
 
     @app.post("/")
     def post():
+        # no login (spec), but a page on another site mustn't post edits from the operator's browser
+        origin = request.headers.get("Origin")
+        if origin and urlparse(origin).netloc != request.host:
+            return "Cross-site edit refused", 403
         raw = _from_form(request.form, config.read_raw(service.config_path))
         action = request.form.get("action", "save")
         if action == "distribute":

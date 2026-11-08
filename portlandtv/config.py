@@ -117,9 +117,11 @@ def on_weekday(cfg, weekday):
 
 def parse(raw):
     """The YAML's raw dict -> the validated config, or raise ConfigError."""
+    if not isinstance(raw, dict):
+        raise ConfigError("the config file must be a mapping of keys")
     day_start = parse_day_start(raw.get("day_start", "06:00"))
     for lib in raw.get("libraries") or []:
-        if not lib.get("path") or lib.get("kind") not in KINDS:
+        if not isinstance(lib, dict) or not lib.get("path") or lib.get("kind") not in KINDS:
             raise ConfigError(f"bad Library {lib!r}, it needs a path and a kind of "
                               + ", ".join(KINDS))
     show_list = raw.get("show_list") or []
@@ -128,8 +130,12 @@ def parse(raw):
             raise ConfigError(f"bad Show List entry {e!r}, use {{show: X}} or {{group: X}}")
     blocks = []
     for b in raw.get("day_schedule") or []:
+        if not isinstance(b, dict):
+            raise ConfigError(f"bad Block {b!r}, it needs a length, a repeat and slots")
         slots = []
         for s in b.get("slots") or []:
+            if not isinstance(s, dict):
+                raise ConfigError(f"bad Slot {s!r}, use rule: or weekdays:")
             if not is_fixed(s) and set(s["weekdays"] or {}) - set(WEEKDAYS):
                 raise ConfigError(f"bad weekdays {sorted(s['weekdays'])!r}, use mon .. sun")
             # an empty day, or a fixed Slot with no rule, is an empty Weekday Rule
