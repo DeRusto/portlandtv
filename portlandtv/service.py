@@ -105,7 +105,7 @@ class Service:
         prober.save()
         program, picks, after, never_fits, problems, sequence, picked = day.build(
             cfg, shows, before, prober, self._card_writer(shows, movies, date), filler, movies,
-            kept)
+            self._schedule_writer(shows, movies, date, cfg["day_start"]), kept)
         d = date.isoformat()
         # atomic, so ffplayout reloads a whole playlist at its next clip boundary
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
@@ -136,3 +136,30 @@ class Service:
                 written.add(name)
             return path
         return card
+
+    def _schedule_writer(self, shows, movies, date, day_start):
+        """schedule(name, rows, upcoming, span) -> that Airing's schedule display frames."""
+        show_of = {p: name for name, eps in shows.items() for p in eps}
+        size = self.ffplayout.output_size()
+        start = datetime.combine(date, day_start, timezone.utc)
+
+        def hhmm(seconds):
+            return (start + timedelta(seconds=seconds)).strftime("%H:%M")
+
+        def schedule(name, rows, upcoming, span):
+            entries = [{"time": hhmm(t), **cards.describe(p, show_of, movies),
+                        "state": "aired" if i < upcoming else
+                        "up_next" if i == upcoming else "later"}
+                       for i, (t, p) in enumerate(rows)]
+            pages = [entries[i:i + day.FRAME_ROWS] for i in range(0, len(entries), day.FRAME_ROWS)]
+            paths = []
+            for n, page in enumerate(pages, 1):
+                path = os.path.join(self.data_dir, "cards", date.isoformat(),
+                                    f"sched-{name}-{n}.png")
+                cards.render_schedule(path, {
+                    "heading": "TODAY ON PORTLAND TV",
+                    "range": f"{hhmm(span[0])}–{hhmm(span[1])} UTC",
+                    "page": f"{n}/{len(pages)}", "rows": page}, size)
+                paths.append(path)
+            return paths
+        return schedule
