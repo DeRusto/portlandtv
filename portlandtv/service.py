@@ -42,12 +42,14 @@ class Service:
             return
         before = store.read_json(self.state_path, {"shows": {}})
         shows = library.scan_shows(cfg["libraries"])
-        card = self._card_writer(shows, date)
-        program, picks, after, sequence = day.build(cfg, shows, before, self.prober, card)
+        program, picks, after, never_fits, sequence = day.build(
+            cfg, shows, before, self.prober, self._card_writer(shows, date),
+            library.scan_filler(cfg["libraries"]))
         d = date.isoformat()
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})
         store.write_json(record_path, {"slots": picks, "state_before": before,
+                                       "never_fits": never_fits,
                                        "tail": sequence[-day.AHEAD:]})
         store.write_json(self.state_path, after)
         # the previous day's last cards were placeholders until this day's items were known
