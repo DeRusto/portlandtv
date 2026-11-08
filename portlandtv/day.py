@@ -5,6 +5,8 @@ from portlandtv import deck, slots
 
 AHEAD = 3  # a card names the next item and the two after it
 MIN_STILL = 1.0  # a Break remainder shorter than this is dropped
+FRAME_ROWS, FRAME_SECONDS = 6, 10  # schedule display: Slots per frame, seconds per frame
+DISPLAY_EVERY = 3  # the schedule display airs in every 3rd Break of an Airing
 
 
 def fill_break(length, filler_deck, clips):
@@ -45,7 +47,7 @@ def resolve_block(cfg, block, b, shows, movies, state, prober, problems):
     return items, lengths, state
 
 
-def build(cfg, shows, state, prober, card, filler=(), movies=()):
+def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None):
     """-> (ffplayout program, the items picked per Block, the advanced state,
     the filler clips longer than every Break that day, the dropped-Slot problems,
     the day's sequence of items).
@@ -53,6 +55,9 @@ def build(cfg, shows, state, prober, card, filler=(), movies=()):
     card(name, upcoming item paths) -> PNG path. A name is shared by every Repeat
     only when its items stay inside the Airing; cards reaching past it are per
     Airing, and the day's last ones are end_card(n), filled in by the next day.
+
+    schedule(name, [(start s, path) per Slot], upcoming Slot index, (start s, end s))
+    -> that Airing's schedule display frame PNGs; times are seconds from day start.
     """
     blocks, problems = [], []
     for b, block in enumerate(cfg["day_schedule"], 1):
@@ -71,16 +76,29 @@ def build(cfg, shows, state, prober, card, filler=(), movies=()):
     breaks = [[fill_break(brk, filler_deck, clips) for _ in items or [None]]
               for _, items, _, brk in blocks]
     sequence = [p for block, items, _, _ in blocks for _ in range(block["repeat"]) for p in items]
-    program, k = [], 0  # k: index in `sequence` of the next item to air
+    program, k, t = [], 0, 0  # k: index in `sequence` of the next item; t: Airing start
     for b, (block, items, lengths, _) in enumerate(blocks):
+        starts, at = [], 0  # Slot starts within the Airing, from the Breaks as laid out
+        for length, (clip_items, rest) in zip(lengths, breaks[b]):
+            starts.append(at)
+            at += length + sum(c["duration"] for c in clip_items) + (rest if rest >= MIN_STILL else 0)
+        frames = -(-len(items) // FRAME_ROWS)
         for r in range(block["repeat"]):
-            end = k + len(items)
+            end, since = k + len(items), 0
             for j, (clip_items, rest) in enumerate(breaks[b]):
                 if j < len(items):
                     program.append({"in": 0, "out": lengths[j], "duration": lengths[j],
                                     "source": items[j]})
                     k += 1
                 program += clip_items
+                since += 1
+                if (schedule and items and since >= DISPLAY_EVERY
+                        and rest >= frames * FRAME_SECONDS):
+                    since, rest = 0, rest - frames * FRAME_SECONDS
+                    rows = [(t + o, p) for o, p in zip(starts, items)]
+                    program += [{"in": 0, "out": FRAME_SECONDS, "duration": FRAME_SECONDS,
+                                 "source": f} for f in
+                                schedule(f"b{b}-a{r}-{j}", rows, j + 1, (t, t + block["length"]))]
                 if rest < MIN_STILL:
                     continue
                 if k + AHEAD > len(sequence):
@@ -91,4 +109,5 @@ def build(cfg, shows, state, prober, card, filler=(), movies=()):
                     name = f"b{b}-{j}"
                 program.append({"in": 0, "out": rest, "duration": rest,
                                 "source": card(name, sequence[k:k + AHEAD])})
+            t += block["length"]
     return program, [b[1] for b in blocks], state, never_fits, problems, sequence

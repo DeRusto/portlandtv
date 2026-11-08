@@ -45,26 +45,28 @@ class BroadcastDayTest(unittest.TestCase):
         playlist = s.playlist("2026-11-09")
         self.assertEqual(playlist["date"], "2026-11-09")
         program = playlist["program"]
-        self.assertEqual(len(program), 18)
-        airing = program[:6]
+        self.assertEqual(len(program), 21)
+        airing = program[:7]
         # verbatim apart from the cards looking past their Airing (here all of them)
+        # and the schedule display
         masked = [{**i, "source": "card"} if PER_AIRING_CARD.search(i["source"]) else i
                   for i in program]
-        self.assertEqual(masked[6:12], masked[:6])
-        self.assertEqual(masked[12:], masked[:6])
+        self.assertEqual(masked[7:14], masked[:7])
+        self.assertEqual(masked[14:], masked[:7])
         self.assertEqual(
-            [i["source"] for i in airing[::2]],
+            [i["source"] for i in airing[0:6:2]],
             [s.path("Show A/Season 1/Show A - S01E01.mkv"),
              s.path("Show A/Season 1/Show A - S01E02.mkv"),
              s.path("Show B/Season 01/b.s01e01.mp4")])
         self.assertEqual(airing[0], {"in": 0, "out": 1200.0, "duration": 1200.0,
                                      "source": airing[0]["source"]})
-        # gap 28800 - 4200 = 24600, split into 3 Breaks of 8200 s
-        for brk in airing[1::2]:
-            self.assertEqual((brk["in"], brk["out"], brk["duration"]), (0, 8200.0, 8200.0))
+        # gap 28800 - 4200 = 24600, split into 3 Breaks of 8200 s; the 3rd opens
+        # with the 10 s schedule display
+        for brk, length in zip(airing[1:6:2] + airing[6:], (8200.0, 8200.0, 10, 8190.0)):
+            self.assertEqual((brk["in"], brk["out"], brk["duration"]), (0, length, length))
             self.assertTrue(brk["source"].endswith(".png"))
         t = starts(program)
-        self.assertEqual((t[0], t[6], t[12]), (0, 28800, 57600))
+        self.assertEqual((t[0], t[7], t[14]), (0, 28800, 57600))
         self.assertEqual(sum(i["out"] - i["in"] for i in program), 86400)
 
     def test_schedule_not_totalling_24h_is_rejected_with_error(self):
