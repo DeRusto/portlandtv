@@ -98,3 +98,16 @@ def scan_shows(libraries, prober):
             seen.add((season, episode))
             shows[name].append(path)
     return shows, unplayable
+
+
+def scan_filler(libraries):
+    """Every video file at any depth of every `filler` Library (no extras filtering)."""
+    clips = []
+    for lib in libraries:
+        if lib.get("kind") != "filler":
+            continue
+        for dirpath, dirs, files in os.walk(lib["path"]):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            clips += [os.path.join(dirpath, f) for f in files
+                      if not f.startswith(".") and os.path.splitext(f)[1].lower() in VIDEO]
+    return sorted(clips)

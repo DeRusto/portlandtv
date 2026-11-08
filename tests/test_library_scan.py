@@ -92,6 +92,17 @@ class LibraryScanTest(unittest.TestCase):
                          [s.path("Show/Season 1/Show - S01E01.mkv"),
                           s.path("Show/Season 1/Show - S01E02.mkv")])
 
+    def test_unplayable_filler_is_left_out_and_reported(self):
+        s = self.station(["Show/Season 1/Show - S01E01.mkv"], slots=1,
+                         filler=["broken.mp4", ".hidden.mp4", "ok.mp4"],
+                         durations={"broken.mp4": None})
+        s.tick(DAY1)
+        sources = [i["source"] for i in s.playlist("2026-11-09")["program"]]
+        self.assertIn(os.path.join(s.filler, "ok.mp4"), sources)
+        self.assertNotIn(os.path.join(s.filler, "broken.mp4"), sources)
+        self.assertNotIn(os.path.join(s.filler, ".hidden.mp4"), sources)
+        self.assertEqual(s.service.unplayable, [os.path.join(s.filler, "broken.mp4")])
+
     def test_durations_cached_so_only_new_or_changed_files_are_probed(self):
         s = self.station(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv"],
                          slots=1)

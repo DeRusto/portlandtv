@@ -46,12 +46,17 @@ class Service:
         before = store.read_json(self.state_path, {"shows": {}})
         prober = library.CachedProber(self.prober, os.path.join(self.data_dir, "durations.json"))
         shows, self.unplayable = library.scan_shows(cfg["libraries"], prober)
+        filler = []
+        for path in library.scan_filler(cfg["libraries"]):
+            (filler if prober.duration(path) else self.unplayable).append(path)
         prober.save()
-        program, picks, after = day.build(cfg, shows, before, prober, self._placeholder())
+        program, picks, after, never_fits = day.build(
+            cfg, shows, before, prober, self._placeholder(), filler)
         d = date.isoformat()
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})
-        store.write_json(record_path, {"slots": picks, "state_before": before})
+        store.write_json(record_path, {"slots": picks, "state_before": before,
+                                       "never_fits": never_fits})
         store.write_json(self.state_path, after)
 
     def _placeholder(self):
