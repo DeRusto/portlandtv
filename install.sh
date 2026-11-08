@@ -39,7 +39,7 @@ ff_version=$(ffmpeg -version | sed -n '1s/^ffmpeg version [^0-9]*\([0-9]*\.[0-9]
 
 echo "== ffplayout $FFPLAYOUT_VERSION"
 case "$(dpkg-query -W -f='${Version}' ffplayout 2>/dev/null || true)" in
-  *"$FFPLAYOUT_VERSION"*) echo "already installed" ;;
+  "$FFPLAYOUT_VERSION" | "$FFPLAYOUT_VERSION"-*) echo "already installed" ;;
   *)
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
@@ -76,10 +76,12 @@ if [ ! -f "$ENV_FILE" ]; then
   runuser -u "$SVC_USER" -- /usr/bin/ffplayout -i \
     -u portlandtv -p "$password" -m portlandtv@localhost --two-factor false \
     --storage "$STORAGE" --playlists "$PLAYLISTS" --logs "$LOGS" --public "$PUBLIC" </dev/null
-  # Written only after -i succeeds, so a failed setup is retried on the next run.
+  # Written only after -i succeeds, so a failed setup is retried on the next run; temp file + rename,
+  # so a failed write never leaves a partial file that would skip setup next time.
   (umask 027
-   printf 'FFPLAYOUT_URL=%s\nFFPLAYOUT_USER=portlandtv\nFFPLAYOUT_PASSWORD=%s\n' "$API" "$password" > "$ENV_FILE")
-  chgrp "$SVC_USER" "$ENV_FILE"
+   printf 'FFPLAYOUT_URL=%s\nFFPLAYOUT_USER=portlandtv\nFFPLAYOUT_PASSWORD=%s\n' "$API" "$password" > "$ENV_FILE.tmp")
+  chgrp "$SVC_USER" "$ENV_FILE.tmp"
+  mv "$ENV_FILE.tmp" "$ENV_FILE"
 fi
 
 systemctl daemon-reload

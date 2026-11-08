@@ -64,7 +64,10 @@ def _from_form(form, raw):
     while f"sl{k}" in form:
         entries.append(_form_rule(form[f"sl{k}"]))
         k += 1
-    return {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries}
+    out = {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries}
+    if "day_start" in form:
+        out["day_start"] = form["day_start"].strip()
+    return out
 
 
 def _move(items, j, k):

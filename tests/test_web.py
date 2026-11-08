@@ -1,6 +1,8 @@
 import os
 import unittest
 
+import yaml
+
 from tests.harness import Channel, utc
 from tests.web_harness import Browser
 
@@ -31,7 +33,7 @@ class WebTest(unittest.TestCase):
 
     def test_page_assets_are_served_locally(self):
         b = self.open()
-        self.assertNotIn("//cdn", b.html)
+        self.assertNotRegex(b.html, r'(src|href)="(https?:)?//')
         for asset in ("/static/style.css", "/static/app.js"):
             self.assertIn(asset, b.html)
             self.assertEqual(b.client.get(asset).status_code, 200)
@@ -96,7 +98,7 @@ class WebTest(unittest.TestCase):
     def test_warns_when_maximum_exceeds_the_block(self):
         b = self.open()
         b.submit("add-slot:1", {"b1.length": "45m", "b1.repeat": "1"})
-        b.submit("add-slot:1", {"b1.s1.rule": "show:Show A"})
+        b.submit(changes={"b1.s1.rule": "show:Show A"})
         self.assertIn("typical 0h51, max 0h55. The maximum exceeds the Block.", b.html)
 
     def test_libraries_added_tagged_and_removed(self):
@@ -179,6 +181,31 @@ class WebTest(unittest.TestCase):
         b.get()
         self.assertNotIn("Generation error", b.html)
         self.assertIsNotNone(b.channel.playlist("2026-11-09"))
+
+    def test_day_start_is_edited_on_the_page(self):
+        b = self.open()
+        b.submit(changes={"day_start": "07:30"})
+        self.assertEqual(b.yaml()["day_start"], "07:30")
+
+    def test_values_the_service_cannot_honour_are_config_errors(self):
+        def zero_block(raw):
+            raw["day_schedule"].append({"length": "0h", "repeat": 1, "slots": []})
+
+        for name, change in (
+                ("seconds", lambda raw: raw.update(day_start="06:00:30")),
+                ("one-digit hour", lambda raw: raw.update(day_start="6:00")),
+                ("movie rule", lambda raw: raw["day_schedule"][0]["slots"].append(
+                    {"rule": {"movie": "latest"}})),
+                ("zero length", zero_block)):
+            with self.subTest(name):
+                b = self.open()
+                raw = b.yaml()
+                change(raw)
+                with open(b.channel.config_path, "w") as f:
+                    yaml.safe_dump(raw, f)
+                b.channel.tick()
+                self.assertIsNotNone(b.channel.service.error)
+                self.assertIsNone(b.channel.playlist("2026-11-09"))
 
     def test_a_post_from_another_site_is_refused(self):
         b = self.open()

@@ -32,6 +32,7 @@ class Channel:
         self.library = os.path.join(self.root, "shows")
         shows = {"shows": files, **(more_shows or {})}
         for lib, rels in shows.items():
+            os.makedirs(os.path.join(self.root, lib), exist_ok=True)
             for rel in rels:
                 path = os.path.join(self.root, lib, rel)
                 os.makedirs(os.path.dirname(path), exist_ok=True)

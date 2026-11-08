@@ -6,7 +6,7 @@ import tempfile
 
 def write_atomic(path, write):
     """Call write(f) on a temp file beside `path`, then rename it over `path`."""
-    folder = os.path.dirname(path)
+    folder = os.path.dirname(path) or "."
     os.makedirs(folder, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=folder, prefix=".tmp-")
     try:
@@ -14,6 +14,7 @@ def write_atomic(path, write):
             write(f)
             f.flush()
             os.fsync(f.fileno())  # so a power cut after the rename can't leave an empty file
+        os.chmod(tmp, 0o644)  # mkstemp makes it 0600; the YAML must stay readable for backups
         os.replace(tmp, path)
     except BaseException:
         os.unlink(tmp)

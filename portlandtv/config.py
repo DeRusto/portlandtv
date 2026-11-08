@@ -19,7 +19,7 @@ class ConfigError(ValueError):
 def parse_length(text):
     """'8h', '90m' or '1h30m' -> seconds."""
     m = re.fullmatch(r"\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*", str(text))
-    if not m or not any(m.groups()):
+    if not m or not any(m.groups()) or not int(m[1] or 0) * 60 + int(m[2] or 0):
         raise ConfigError(f"bad Block length {text!r}, use e.g. 8h or 1h30m")
     return int(m[1] or 0) * 3600 + int(m[2] or 0) * 60
 
@@ -29,6 +29,8 @@ def parse_day_start(start):
     try:
         if isinstance(start, int):
             start = f"{start // 60:02}:{start % 60:02}"
+        if not re.fullmatch(r"\d\d:\d\d", start):  # ffplayout takes HH:MM; no seconds
+            raise ValueError(start)
         return time.fromisoformat(start)
     except (TypeError, ValueError):
         raise ConfigError(f"bad day_start {start!r}, use UTC HH:MM")
@@ -106,6 +108,8 @@ def length_repeat(raw_block):
 def _rule(rule):
     if not isinstance(rule, dict) or len(rule) != 1 or next(iter(rule)) not in RULES:
         raise ConfigError(f"unknown Slot rule {rule!r}")
+    if "movie" in rule and rule["movie"] != "random":
+        raise ConfigError(f"unknown Slot rule {rule!r}, the movie rule is {{movie: random}}")
     return rule
 
 

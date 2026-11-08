@@ -24,7 +24,7 @@ class FfprobeProber:
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
              "-of", "default=nw=1:nk=1", path],
-            capture_output=True, text=True, check=True).stdout
+            capture_output=True, text=True, check=True, timeout=120).stdout
         return float(out)
 
 

@@ -52,7 +52,7 @@
   <div class="row">
     <main class="grow">
       <h2>Day Schedule</h2>
-      <p class="mute">The Broadcast Day starts at {{ day_start }} UTC.</p>
+      <p class="mute"><label>The Broadcast Day starts at <input name="day_start" value="{{ day_start }}" size="5" pattern="\d\d:\d\d"> UTC.</label></p>
       {% for b in blocks %}{% set i = loop.index0 %}
       <section class="card block">
         <h3>Block {{ loop.index }}: {{ b.raw.length }} × {{ b.raw.repeat }}

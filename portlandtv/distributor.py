@@ -18,10 +18,12 @@ def distribute(entries, left, slots):
                       " each entry needs at least one cell")
     total = sum(left)
     spare = cells - len(entries)
-    # shortcut: with no episodes left anywhere, share the spare cells equally
-    quota = [spare * n / total if total else spare / len(entries) for n in left]
-    counts = [1 + int(q) for q in quota]
-    by_remainder = sorted(range(len(entries)), key=lambda i: -(quota[i] - int(quota[i])))
+    if not total:  # shortcut: with no episodes left anywhere, share the spare cells equally
+        left, total = [1] * len(entries), len(entries)
+    # whole numbers, so equal remainders tie exactly and go to the earlier entry
+    quota = [divmod(spare * n, total) for n in left]
+    counts = [1 + q for q, _ in quota]
+    by_remainder = sorted(range(len(entries)), key=lambda i: -quota[i][1])
     for i in by_remainder[:cells - sum(counts)]:
         counts[i] += 1
     run = [e for e, n in zip(entries, counts) for _ in range(n)]
