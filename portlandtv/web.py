@@ -64,7 +64,23 @@ def _from_form(form, raw):
     while f"sl{k}" in form:
         entries.append(_form_rule(form[f"sl{k}"]))
         k += 1
-    out = {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries}
+    groups, renames, i = {}, [], 0
+    while f"g{i}.name" in form:
+        members, j = [], 0
+        while f"g{i}.m{j}" in form:
+            members.append(form[f"g{i}.m{j}"])
+            j += 1
+        was, name = form.get(f"g{i}.was", ""), form[f"g{i}.name"].strip()
+        if not name or name in groups:  # an empty or taken name keeps the old one
+            name = was
+        if was and name != was:
+            renames.append((was, name))
+        groups[name] = members
+        i += 1
+    out = {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries,
+           "show_groups": groups}
+    for was, name in renames:
+        config.rename_group(out, was, name)
     if "day_start" in form:
         out["day_start"] = form["day_start"].strip()
     return out
@@ -75,12 +91,14 @@ def _move(items, j, k):
         items[j], items[k] = items[k], items[j]
 
 
-def _apply(raw, action, add=""):
+def _apply(raw, action, form):
     """Edit the draft for one button: add/del/up/down of Blocks, Slots, Libraries,
-    Show List entries (`add`: the rule key picked in the add dropdown)."""
+    Show List entries and Show Groups and their shows (picked in the form's add dropdowns)."""
     verb, _, args = action.partition(":")
     idx = [int(a) for a in args.split(":") if a]
     blocks, libs, entries = raw["day_schedule"], raw["libraries"], raw["show_list"]
+    groups = raw["show_groups"]
+    names = list(groups)
     if verb == "add-block":
         blocks.append(config.new_block())
     elif verb == "del-block":
@@ -101,8 +119,19 @@ def _apply(raw, action, add=""):
         _move(entries, idx[0], idx[0] - 1 if verb == "up-entry" else idx[0] + 1)
     elif verb == "del-entry":  # the grid is left as it is
         del entries[idx[0]]
-    elif verb == "add-entry" and (rule := _form_rule(add)) and rule not in entries:
+    elif verb == "add-entry" and (rule := _form_rule(form.get("sl.add", "")))             and rule not in entries:
         entries.append(rule)
+    elif verb == "add-group" and (name := form.get("g.new", "").strip()) and name not in groups:
+        groups[name] = []
+    elif verb == "del-group":  # Slots and entries naming it are flagged, not changed
+        del groups[names[idx[0]]]
+    elif verb == "add-member" and (show := form.get(f"g{idx[0]}.add", ""))             and show not in groups[names[idx[0]]]:
+        groups[names[idx[0]]].append(show)
+    elif verb == "del-member":
+        del groups[names[idx[0]]][idx[1]]
+    elif verb in ("up-member", "down-member"):
+        j = idx[1]
+        _move(groups[names[idx[0]]], j, j - 1 if verb == "up-member" else j + 1)
     elif verb == "add-lib":
         libs.append({"path": "", "kind": "shows"})
     elif verb == "del-lib":
@@ -254,6 +283,8 @@ def create_app(service):
             "index.html", raw=raw, blocks=blocks, error=error, kinds=config.KINDS,
             day_start=day_start.strftime("%H:%M"), left=_hm(config.DAY - total),
             choices=choices, known={k for k, _ in choices}, add=add, show_list=show_list,
+            groups=[{"name": n, "members": ms, "add": [s for s in shows if s not in ms]}
+                    for n, ms in groups.items()],
             dialog=dialog, refused=refused, days=[d.title() for d in config.WEEKDAYS],
             problems=problems(missing, schedule)), status
 
@@ -289,7 +320,7 @@ def create_app(service):
                 s.update(config.distributed_slot(rules))
             action = "save"
         if action not in ("save", "rebuild"):
-            _apply(raw, action, request.form.get("sl.add", ""))
+            _apply(raw, action, request.form)
             return render(raw)
         try:
             config.save(service.config_path, raw)

@@ -128,6 +128,31 @@
       </select> <button class="small" name="action" value="add-entry">Add</button></p>
       <button name="action" value="distribute">Distribute…</button>
     </aside>
+    <aside class="card" id="show-groups">
+      <h2>Show Groups</h2>
+      <p class="mute">Shows that share a Slot, played back to back.</p>
+      {% for g in groups %}{% set i = loop.index0 %}
+      <div class="group">
+        <p><input name="g{{ i }}.name" value="{{ g.name }}" aria-label="Show Group {{ i + 1 }} name">
+          <input type="hidden" name="g{{ i }}.was" value="{{ g.name }}">
+          <button class="small" name="action" value="del-group:{{ i }}" aria-label="Remove Show Group {{ g.name }}">×</button></p>
+        <ol>
+          {% for m in g.members %}{% set j = loop.index0 %}
+          <li><input type="hidden" name="g{{ i }}.m{{ j }}" value="{{ m }}">{{ m }}
+            <button class="small" name="action" value="up-member:{{ i }}:{{ j }}" aria-label="Move {{ m }} up">↑</button>
+            <button class="small" name="action" value="down-member:{{ i }}:{{ j }}" aria-label="Move {{ m }} down">↓</button>
+            <button class="small" name="action" value="del-member:{{ i }}:{{ j }}" aria-label="Remove {{ m }} from {{ g.name }}">×</button></li>
+          {% endfor %}
+        </ol>
+        <p><select name="g{{ i }}.add" aria-label="Show to add to {{ g.name }}">
+          <option value="">— add a show</option>
+          {% for s in g.add %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+        </select> <button class="small" name="action" value="add-member:{{ i }}">Add</button></p>
+      </div>
+      {% endfor %}
+      <p><input name="g.new" placeholder="New Show Group name" aria-label="New Show Group name">
+        <button class="small" name="action" value="add-group">Add Show Group</button></p>
+    </aside>
     <aside class="card" id="problems">
       <h2>Problems</h2>
       {% if problems %}

@@ -60,6 +60,7 @@ def read_raw(path):
         raw = yaml.safe_load(f) or {}
     return {**raw, "libraries": raw.get("libraries") or [],
             "day_schedule": raw.get("day_schedule") or [],
+            "show_groups": raw.get("show_groups") or {},
             "show_list": raw.get("show_list") or []}
 
 
@@ -131,6 +132,17 @@ def _rule(rule):
     return rule
 
 
+def rename_group(raw, old, new):
+    """Point every Slot rule and Show List entry naming Show Group `old` at `new`."""
+    rules = list(raw["show_list"])
+    for b in raw["day_schedule"]:
+        for s in b.get("slots") or []:
+            rules += [s.get("rule")] + list((s.get("weekdays") or {}).values())
+    for r in rules:
+        if isinstance(r, dict) and r.get("group") == old:
+            r["group"] = new
+
+
 def on_weekday(cfg, weekday):
     """The config with each Slot reduced to its rule on `weekday` (0 = Monday)."""
     return {**cfg, "day_schedule": [{**b, "slots": [s[weekday] for s in b["slots"]]}
@@ -146,6 +158,14 @@ def parse(raw):
         if not isinstance(lib, dict) or not lib.get("path") or lib.get("kind") not in KINDS:
             raise ConfigError(f"bad Library {lib!r}, it needs a path and a kind of "
                               + ", ".join(KINDS))
+    groups = raw.get("show_groups") or {}
+    if not isinstance(groups, dict):
+        raise ConfigError("bad show_groups, use a mapping of name: [shows]")
+    for name, members in groups.items():
+        if not isinstance(members, list) or not all(isinstance(m, str) and m for m in members):
+            raise ConfigError(f"bad Show Group {name!r}, it needs a list of show names")
+        if not members:
+            raise ConfigError(f"Show Group {name} has no shows")
     show_list = raw.get("show_list") or []
     for e in show_list:
         if not isinstance(e, dict) or len(e) != 1 or next(iter(e)) not in ("show", "group"):
@@ -168,5 +188,5 @@ def parse(raw):
     if total != DAY:
         raise ConfigError(f"Day Schedule totals {total / 3600:g} h, it must be exactly 24 h")
     return {"libraries": raw.get("libraries") or [], "day_start": day_start,
-            "day_schedule": blocks, "show_groups": raw.get("show_groups") or {},
+            "day_schedule": blocks, "show_groups": groups,
             "show_list": show_list}
