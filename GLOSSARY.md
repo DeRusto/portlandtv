@@ -17,12 +17,16 @@ An ordered run of programming items (e.g. 8 hours) that forms the unit of repeti
 _Avoid_: Playlist, segment
 
 **Day Schedule**:
-The sequence of Blocks, each with a length and a repeat count, that exactly fills one Broadcast Day on a Channel; the same Day Schedule runs every Broadcast Day.
+The sequence of Blocks, each with a length and a repeat count, that exactly fills one Broadcast Day on a Channel; the same Blocks run every Broadcast Day, though a distributed Slot's rule varies by weekday.
 _Avoid_: Lineup, rotation
 
 **Slot**:
-A position in a Block defined by a rule (e.g. "next episode of Show A"), filled with a concrete item once per Broadcast Day.
+A position in a Block defined by a rule (e.g. "next episode of Show A"), filled with a concrete item once per Broadcast Day. A **fixed** Slot has one rule all week; a **distributed** Slot has a weekday rule for each weekday.
 _Avoid_: Entry, placeholder
+
+**Weekday Rule**:
+The rule a distributed Slot uses on one weekday, set by the Show List's distribution or by hand.
+_Avoid_: Assignment, cell
 
 **Show Group**:
 An ordered list of shows that a Slot plays through one after another, as if they were one long show.
@@ -33,7 +37,7 @@ The ordered list of shows and Show Groups that the app shares out across the wee
 _Avoid_: Lineup, rotation
 
 **Broadcast Day**:
-The 24-hour period, starting at a configured UTC clock time (no daylight-saving changes), over which a Day Schedule runs and Slots stay frozen.
+The 24-hour period, starting at a configured UTC clock time (no daylight-saving changes), over which a Day Schedule runs and Slots stay frozen; its weekday is that of the UTC date it starts on.
 _Avoid_: Calendar day
 
 **Filler**:
