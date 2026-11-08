@@ -50,10 +50,10 @@ class Channel:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 open(path, "w").close()
             libraries.append({"path": self.filler, "kind": "filler"})
-        config = {"libraries": libraries, **config}
         self.config_path = os.path.join(self.root, "portlandtv.yaml")
-        with open(self.config_path, "w") as f:
-            yaml.safe_dump(config, f)
+        if config is not None:  # None: no YAML yet, as on a fresh install
+            with open(self.config_path, "w") as f:
+                yaml.safe_dump({"libraries": libraries, **config}, f)
         self.playlists = os.path.join(self.root, "playlists")
         self.prober = FakeProber(durations)
         self.clock = FakeClock(now or utc(2026, 11, 9, 12, 0))

@@ -21,6 +21,7 @@ class Service:
         self.today = None  # date the current Broadcast Day started on, as of the last tick
         self.unplayable = []  # files the last scan left out, for the UI
         self._lock = threading.RLock()  # the tick thread and web requests both build
+        config.ensure(config_path)
 
     def tick(self):
         with self._lock:

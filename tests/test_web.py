@@ -207,6 +207,18 @@ class WebTest(unittest.TestCase):
                 self.assertIsNotNone(b.channel.service.error)
                 self.assertIsNone(b.channel.playlist("2026-11-09"))
 
+    def test_a_fresh_install_gets_a_base_config_and_the_page_opens(self):
+        s = Channel(None)
+        self.addCleanup(s.close)
+        self.assertEqual(Browser(s).client.get("/").status_code, 200)
+        with open(s.config_path) as f:
+            raw = yaml.safe_load(f)
+        self.assertEqual(raw, {"day_start": "06:00", "libraries": [], "show_groups": {},
+                               "show_list": [], "day_schedule": []})
+        s.tick()  # an empty schedule is an error to fix, never a made-up one
+        self.assertIn("totals 0 h", s.service.error)
+        self.assertIsNone(s.playlist("2026-11-09"))
+
     def test_a_post_from_another_site_is_refused(self):
         b = self.open()
         before = b.yaml()

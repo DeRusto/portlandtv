@@ -104,7 +104,7 @@ if os.path.exists(cfg_path):
     with open(cfg_path) as f:
         raw = yaml.safe_load(f) or {}
 else:
-    print(f"no {cfg_path} yet: using day_start 06:00 and no filler; re-run after writing it")
+    print(f"no {cfg_path} yet (the service creates it): using day_start 06:00 and no filler")
 start = raw.get("day_start", "06:00")
 if isinstance(start, int):  # unquoted HH:MM is a base-60 int in YAML 1.1
     start = f"{start // 60:02}:{start % 60:02}"
@@ -147,5 +147,6 @@ systemctl daemon-reload
 systemctl enable portlandtv
 systemctl restart portlandtv
 
-[ -f "$CONFIG" ] || echo "NOTE: write $CONFIG (owned by $SVC_USER), then re-run to push day_start and filler"
-echo "Done. Stream: http://<this laptop's IP>:8787/public/1/live/stream.m3u8"
+echo "Done. Build the schedule in the web UI: http://<this laptop's IP>:8080"
+echo "      Stream: http://<this laptop's IP>:8787/public/1/live/stream.m3u8"
+echo "After adding a filler Library, re-run this script so ffplayout uses that folder."

@@ -1,4 +1,5 @@
 """Config: the single owner of the human-owned YAML shape."""
+import os
 import re
 from datetime import time
 
@@ -12,8 +13,25 @@ KINDS = ("shows", "movies", "filler")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")  # date.weekday() order
 
 
+# Written on first start, so the web UI opens on a fresh install. The empty Day Schedule
+# is a generation error until one is built: the service never invents a schedule.
+BASE = """# PortlandTV schedule: edit it in the web UI (port 8080), or here by hand.
+day_start: "06:00"      # UTC
+libraries: []           # e.g. - {path: /media/tv, kind: shows}   (kinds: shows, movies, filler)
+show_groups: {}         # e.g. Cartoons: [Show C, Show D]
+show_list: []           # e.g. - show: Show A
+day_schedule: []        # Blocks; length x repeat must total exactly 24 h
+"""
+
+
 class ConfigError(ValueError):
     pass
+
+
+def ensure(path):
+    """Write the base config at `path` unless a config is already there."""
+    if not os.path.exists(path):
+        store.write_atomic(path, lambda f: f.write(BASE.encode()))
 
 
 def parse_length(text):

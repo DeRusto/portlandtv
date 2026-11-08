@@ -39,17 +39,32 @@ It:
 - sets ffplayout up with a login for PortlandTV, saved in `/etc/portlandtv/ffplayout.env`;
 - copies the app to `/opt/portlandtv` and starts the `portlandtv` systemd service.
 
-On the first run there is no schedule yet, so it ends with a note asking you to write one.
+On first start the service creates an empty schedule at `/var/lib/portlandtv/portlandtv.yaml`.
 
-### 3. Write your schedule
+### 3. Build your schedule in the web UI
 
-Create `/var/lib/portlandtv/portlandtv.yaml`:
+Open `http://<laptop-ip>:8080` from any device on the home network. There is no login.
+
+1. Under **Libraries**, add your media folders and tag each one `shows`, `movies` or `filler`. Show names are the show folder names.
+2. Set the Broadcast Day start (UTC).
+3. Add Blocks and give each a length and a repeat count. All Blocks' length × repeat must total exactly 24 h. The page keeps your edits as a draft and shows the time still to assign.
+4. Add Slots to each Block: next episode of a show or a Show Group, or a random movie. Make a Slot **distributed** to give it a different rule for each weekday. Show Groups are defined in the file (see below).
+5. Optionally add shows to the **Show List** and use **Distribute…** to share them out across the week's distributed cells.
+6. **Save.** Nothing, not even the Libraries, is saved until the schedule totals 24 h, so on a fresh install build it in one sitting.
+
+Until the schedule totals 24 h, the **Problems** panel shows a generation error and nothing is generated; the service never makes up a schedule.
+
+The service runs as `ffpu`, a user the ffplayout package creates. If your media is on an external drive, mount it so that `ffpu` can read it.
+
+If you added a `filler` Library, re-run the installer once so ffplayout uses that folder for its own gaps:
 
 ```bash
-sudo nano /var/lib/portlandtv/portlandtv.yaml
+sudo ./install.sh
 ```
 
-Start from this and change the paths and show names to yours. Show names are the show folder names.
+#### Or edit the file by hand
+
+The schedule is plain YAML and safe to edit by hand or to restore from a backup. A full example:
 
 ```yaml
 day_start: "06:00"            # UTC; every Broadcast Day is exactly 24 h
@@ -78,24 +93,17 @@ day_schedule:                 # length × repeat of all Blocks must total exactl
           sun: {group: Cartoons}
 ```
 
-Then give the file to the service user, make sure that user can read your media, and re-run the installer so ffplayout gets your `day_start` and Filler folder:
+Edit it as the service user, so the file stays readable by the service:
 
 ```bash
-sudo chown ffpu:ffpu /var/lib/portlandtv/portlandtv.yaml
+sudo -u ffpu nano /var/lib/portlandtv/portlandtv.yaml
 ```
 
-```bash
-sudo ./install.sh
-```
+### 4. Watch
 
-The service user is `ffpu`, which the ffplayout package creates. If your media is on an external drive, mount it so that `ffpu` can read it.
+In VLC, open **Media → Open Network Stream** and enter `http://<laptop-ip>:8787/public/1/live/stream.m3u8`.
 
-### 4. Watch and edit
-
-- **Watch:** in VLC, open **Media → Open Network Stream** and enter `http://<laptop-ip>:8787/public/1/live/stream.m3u8`.
-- **Edit:** open `http://<laptop-ip>:8080` from any device on the home network. There is no login. From there you can edit Blocks, Slots, Weekday Rules, the Show List and the Libraries, and run **Distribute…**. The **Problems** panel lists anything wrong, such as empty cells, missing shows, unplayable files or generation errors.
-
-A saved edit takes effect at the next Broadcast Day, so today's Repeats stay identical. **Save and rebuild today from now** applies it straight away instead.
+The **Problems** panel in the web UI lists anything wrong, such as empty cells, missing shows, unplayable files or generation errors. A saved edit takes effect at the next Broadcast Day, so today's Repeats stay identical. **Save and rebuild today from now** applies it straight away instead.
 
 ## Upgrade
 
