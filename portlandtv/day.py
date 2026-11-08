@@ -10,10 +10,10 @@ DISPLAY_EVERY = 3  # the schedule display airs in every 3rd Break of an Airing
 
 
 def fill_break(length, filler_deck, clips):
-    """-> (whole clips from the deck while they fit, the remainder left for the card)."""
+    """-> (whole clips from the deck while any fits, the remainder left for the card).
+    A clip too long for what is left stays in the deck for a later Break."""
     out = []
-    while (path := deck.peek(filler_deck, list(clips))) and clips[path] <= length:
-        deck.take(filler_deck)
+    while path := deck.draw(filler_deck, list(clips), lambda p: clips[p] <= length):
         out.append({"in": 0, "out": clips[path], "duration": clips[path], "source": path})
         length -= clips[path]
     return out, length

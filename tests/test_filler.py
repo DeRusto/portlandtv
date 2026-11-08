@@ -84,6 +84,22 @@ class FillerTest(unittest.TestCase):
         self.assertEqual(len(airing), 2)
         self.assertStill(airing[1], 2400.0)
 
+    def test_a_clip_too_long_for_this_break_does_not_block_shorter_ones(self):
+        # a 300 s Break, then a 23 h one; five 1000 s clips and one 200 s clip
+        config = {"day_schedule": [
+            {"length": "1h", "repeat": 1, "slots": [{"rule": {"show": "Show S"}}]},
+            {"length": "23h", "repeat": 1, "slots": [{"rule": {"show": "Show A"}}]}]}
+        long = [f"long{n}.mp4" for n in range(5)]
+        for _ in range(4):  # the deck is shuffled: the short clip is rarely at the front
+            s = Station(config, ["Show S/s.mkv", EPISODES[0]],
+                        {"s.mkv": 3300.0, "short.mp4": 200.0, **{p: 1000.0 for p in long}},
+                        filler=long + ["short.mp4"])
+            self.addCleanup(s.close)
+            s.tick(utc(2026, 11, 9, 12, 0))
+            program = s.playlist("2026-11-09")["program"]
+            self.assertEqual(os.path.basename(program[1]["source"]), "short.mp4")
+            self.assertStill(program[2], 100.0)
+
     def test_clips_longer_than_any_break_never_fit_and_are_reported(self):
         s = self.station(["huge.mp4", "ok.mp4"], {"huge.mp4": 3000.0, "ok.mp4": 1300.0})
         s.tick(utc(2026, 11, 9, 12, 0))

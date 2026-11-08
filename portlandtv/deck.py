@@ -24,3 +24,14 @@ def peek(deck, items):
 def take(deck):
     """Draw the item `peek` returned."""
     deck["aired"].append(deck["left"].pop(0))
+
+
+def draw(deck, items, fits):
+    """Draw the first item in deck order that `fits`, leaving the ones skipped in
+    place; None when nothing left fits."""
+    peek(deck, items)
+    item = next((p for p in deck["left"] if fits(p)), None)
+    if item is not None:
+        deck["left"].remove(item)
+        deck["aired"].append(item)
+    return item
