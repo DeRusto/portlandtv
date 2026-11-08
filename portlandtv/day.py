@@ -3,19 +3,23 @@ import copy
 
 from portlandtv import deck, slots
 
+AHEAD = 3  # a card names the next item and the two after it
 MIN_STILL = 1.0  # a Break remainder shorter than this is dropped
 
 
-def fill_break(length, filler_deck, clips, card):
-    """Whole clips from the deck while they fit, then a still for the remainder."""
+def fill_break(length, filler_deck, clips):
+    """-> (whole clips from the deck while they fit, the remainder left for the card)."""
     out = []
     while (path := deck.peek(filler_deck, list(clips))) and clips[path] <= length:
         deck.take(filler_deck)
         out.append({"in": 0, "out": clips[path], "duration": clips[path], "source": path})
         length -= clips[path]
-    if length >= MIN_STILL:
-        out.append({"in": 0, "out": length, "duration": length, "source": card})
-    return out
+    return out, length
+
+
+def end_card(n):
+    """Name of the card n Breaks from the end of the day (1 = final Break)."""
+    return f"end-{n}"
 
 
 def resolve_block(cfg, block, b, shows, movies, state, prober, problems):
@@ -43,7 +47,13 @@ def resolve_block(cfg, block, b, shows, movies, state, prober, problems):
 
 def build(cfg, shows, state, prober, card, filler=(), movies=()):
     """-> (ffplayout program, the items picked per Block, the advanced state,
-    the filler clips longer than every Break that day, the dropped-Slot problems)."""
+    the filler clips longer than every Break that day, the dropped-Slot problems,
+    the day's sequence of items).
+
+    card(name, upcoming item paths) -> PNG path. A name is shared by every Repeat
+    only when its items stay inside the Airing; cards reaching past it are per
+    Airing, and the day's last ones are end_card(n), filled in by the next day.
+    """
     blocks, problems = [], []
     for b, block in enumerate(cfg["day_schedule"], 1):
         items, lengths, state = resolve_block(cfg, block, b, shows, movies, state,
@@ -56,13 +66,29 @@ def build(cfg, shows, state, prober, card, filler=(), movies=()):
     clips = {p: d for p, d in durations.items() if 0 < d <= longest}
     never_fits = sorted(p for p, d in durations.items() if d > longest)
     filler_deck = state.setdefault("filler", {})
-    program = []
-    for block, items, lengths, brk in blocks:
-        airing = []
-        for path, length in zip(items, lengths):
-            airing.append({"in": 0, "out": length, "duration": length, "source": path})
-            airing += fill_break(brk, filler_deck, clips, card)
-        if not items:  # nothing aired: the whole Block is one Break
-            airing = fill_break(brk, filler_deck, clips, card)
-        program += airing * block["repeat"]
-    return program, [b[1] for b in blocks], state, never_fits, problems
+    # filler is drawn once per Break position and shared by Repeats; a Block with
+    # no items airs as one Break
+    breaks = [[fill_break(brk, filler_deck, clips) for _ in items or [None]]
+              for _, items, _, brk in blocks]
+    sequence = [p for block, items, _, _ in blocks for _ in range(block["repeat"]) for p in items]
+    program, k = [], 0  # k: index in `sequence` of the next item to air
+    for b, (block, items, lengths, _) in enumerate(blocks):
+        for r in range(block["repeat"]):
+            end = k + len(items)
+            for j, (clip_items, rest) in enumerate(breaks[b]):
+                if j < len(items):
+                    program.append({"in": 0, "out": lengths[j], "duration": lengths[j],
+                                    "source": items[j]})
+                    k += 1
+                program += clip_items
+                if rest < MIN_STILL:
+                    continue
+                if k + AHEAD > len(sequence):
+                    name = end_card(len(sequence) - k + 1)
+                elif k + AHEAD > end:
+                    name = f"b{b}-a{r}-{j}"
+                else:
+                    name = f"b{b}-{j}"
+                program.append({"in": 0, "out": rest, "duration": rest,
+                                "source": card(name, sequence[k:k + AHEAD])})
+    return program, [b[1] for b in blocks], state, never_fits, problems, sequence

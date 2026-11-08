@@ -2,6 +2,7 @@
 and the state JSON, plus a Service wired to fakes."""
 import json
 import os
+import re
 import tempfile
 from datetime import datetime, timezone
 
@@ -9,6 +10,11 @@ import yaml
 
 from portlandtv.service import Service
 from tests.fakes import FakeClock, FakeFfplayout, FakeProber
+
+
+# cards whose UP NEXT/THEN reach past their Airing, so they differ between Repeats;
+# every other source (shared b{block}-{slot} cards included) is identical in each Repeat
+PER_AIRING_CARD = re.compile(r"[/\\](b\d+-a\d+-\d+|end-\d+)\.png$")
 
 
 def utc(*args):

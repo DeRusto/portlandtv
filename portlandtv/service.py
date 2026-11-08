@@ -2,9 +2,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 
-from PIL import Image
-
-from portlandtv import config, day, library, store
+from portlandtv import cards, config, day, library, store
 
 LEAD = timedelta(hours=1)
 
@@ -52,19 +50,34 @@ class Service:
             for path in paths:
                 (found if prober.duration(path) else self.unplayable).append(path)
         prober.save()
-        program, picks, after, never_fits, problems = day.build(
-            cfg, shows, before, prober, self._placeholder(), filler, movies)
+        program, picks, after, never_fits, problems, sequence = day.build(
+            cfg, shows, before, prober, self._card_writer(shows, movies, date), filler, movies)
         d = date.isoformat()
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})
         store.write_json(record_path, {"slots": picks, "problems": problems,
-                                       "state_before": before, "never_fits": never_fits})
+                                       "state_before": before, "never_fits": never_fits,
+                                       "tail": sequence[-day.AHEAD:]})
         store.write_json(self.state_path, after)
+        # the previous day's last cards were placeholders until this day's items were known
+        prev = store.read_json(self._day_record_path(date - timedelta(days=1)), {})
+        if "tail" in prev:
+            tail = prev["tail"]
+            prev_card = self._card_writer(shows, movies, date - timedelta(days=1))
+            for n in range(1, len(tail) + 1):
+                t = len(tail) - n
+                prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
 
-    def _placeholder(self):
-        path = os.path.join(self.data_dir, "cards", "placeholder.png")
-        if not os.path.exists(path):
-            # shortcut: plain still for every Break until the card renderer lands
-            img = Image.new("RGB", (1280, 720), "#0b0d12")
-            store.write_atomic(path, lambda f: img.save(f, "PNG"))
-        return path
+    def _card_writer(self, shows, movies, date):
+        """card(name, item paths) -> path of that day's card, rendered once per name."""
+        show_of = {p: name for name, eps in shows.items() for p in eps}
+        size = self.ffplayout.output_size()
+        written = set()
+
+        def card(name, paths):
+            path = os.path.join(self.data_dir, "cards", date.isoformat(), name + ".png")
+            if name not in written:
+                cards.render(path, [cards.describe(p, show_of, movies) for p in paths], size)
+                written.add(name)
+            return path
+        return card
