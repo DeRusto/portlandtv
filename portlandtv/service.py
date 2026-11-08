@@ -19,6 +19,7 @@ class Service:
         self.data_dir = os.path.dirname(os.path.abspath(config_path))
         self.state_path = os.path.join(self.data_dir, "state.json")
         self.error = None  # last generation error, for the UI
+        self.unplayable = []  # files the last scan left out, for the UI
 
     def tick(self):
         try:
@@ -43,8 +44,10 @@ class Service:
         if os.path.exists(record_path):
             return
         before = store.read_json(self.state_path, {"shows": {}})
-        shows = library.scan_shows(cfg["libraries"])
-        program, picks, after = day.build(cfg, shows, before, self.prober, self._placeholder())
+        prober = library.CachedProber(self.prober, os.path.join(self.data_dir, "durations.json"))
+        shows, self.unplayable = library.scan_shows(cfg["libraries"], prober)
+        prober.save()
+        program, picks, after = day.build(cfg, shows, before, prober, self._placeholder())
         d = date.isoformat()
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})

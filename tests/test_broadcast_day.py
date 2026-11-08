@@ -136,8 +136,8 @@ class BroadcastDayTest(unittest.TestCase):
         s.tick(utc(2026, 11, 9, 12, 0))
         state_after_day1 = s.read_json("state.json")
         self.assertEqual(state_after_day1["shows"], {
-            "Show A": {"path": s.path("Show A/Season 1/Show A - S01E02.mkv")},
-            "Show B": {"path": s.path("Show B/Season 01/b.s01e01.mp4")},
+            "Show A": {"path": s.path("Show A/Season 1/Show A - S01E02.mkv"), "key": [1, 2]},
+            "Show B": {"path": s.path("Show B/Season 01/b.s01e01.mp4"), "key": [1, 1]},
         })
         s.tick(utc(2026, 11, 10, 5, 0))
         record = s.read_json("days/2026-11-10.json")

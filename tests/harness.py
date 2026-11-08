@@ -16,15 +16,19 @@ def utc(*args):
 
 
 class Station:
-    def __init__(self, config, files=(), durations=None, now=None):
+    def __init__(self, config, files=(), durations=None, now=None, more_shows=None):
+        """`more_shows`: {folder name under root: [rel paths]}, extra `shows` Libraries."""
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         self.library = os.path.join(self.root, "shows")
-        for rel in files:
-            path = os.path.join(self.library, rel)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            open(path, "w").close()
-        config = {"libraries": [{"path": self.library, "kind": "shows"}], **config}
+        libraries = {"shows": files, **(more_shows or {})}
+        for lib, rels in libraries.items():
+            for rel in rels:
+                path = os.path.join(self.root, lib, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").close()
+        config = {"libraries": [{"path": os.path.join(self.root, lib), "kind": "shows"}
+                                for lib in libraries], **config}
         self.config_path = os.path.join(self.root, "portlandtv.yaml")
         with open(self.config_path, "w") as f:
             yaml.safe_dump(config, f)

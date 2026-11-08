@@ -1,13 +1,22 @@
 """Day builder: fill each Slot once, lay out Breaks, write each Airing N times."""
 import copy
 
+from portlandtv.library import episode_key
+
 
 def next_episode(shows, state, name):
-    """The episode after the show's last-aired file; advances `state` in place."""
+    """The episode after the show's last-aired file, or if that file is gone, the first
+    that sorts after its (season, episode) key; advances `state` in place."""
     eps = shows[name]
-    last = state["shows"].get(name, {}).get("path")
-    path = eps[(eps.index(last) + 1) % len(eps)] if last in eps else eps[0]
-    state["shows"][name] = {"path": path}
+    last = state["shows"].get(name, {})
+    if last.get("path") in eps:
+        i = eps.index(last["path"]) + 1
+    elif "key" in last:
+        i = next((n for n, p in enumerate(eps) if episode_key(p) > tuple(last["key"])), 0)
+    else:
+        i = 0
+    path = eps[i % len(eps)]
+    state["shows"][name] = {"path": path, "key": list(episode_key(path))}
     return path
 
 
