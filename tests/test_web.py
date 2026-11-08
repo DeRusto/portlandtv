@@ -1,4 +1,3 @@
-import json
 import os
 import unittest
 
@@ -130,15 +129,33 @@ class WebTest(unittest.TestCase):
         self.assertIn("Generation error:", b.html)
 
     def test_problems_lists_what_the_latest_day_record_flags(self):
-        b = self.open()
+        b = self.open({**CONFIG, "day_schedule": [
+            CONFIG["day_schedule"][0],
+            {"length": "4h", "repeat": 2, "slots": [{"rule": {"show": "Show C"}}]}]})
         b.station.tick()
-        rel = "days/2026-11-09.json"
-        record = b.station.read_json(rel)
-        record["problems"] = ["Slot 2 dropped: show Show C is missing"]
-        with open(os.path.join(b.station.root, rel), "w") as f:
-            json.dump(record, f)
         b.get()
-        self.assertIn("2026-11-09: Slot 2 dropped: show Show C is missing", b.html)
+        self.assertIn("2026-11-09: Block 2 Slot 1: show &#39;Show C&#39; not found", b.html)
+
+    def test_problems_lists_unplayable_files_and_filler_that_never_fits(self):
+        s = Station(CONFIG, FILES + ["Show A/Show A - S01E04.mkv"],
+                    {**DURATIONS, "Show A - S01E04.mkv": None, "long.mp4": 30000.0},
+                    filler=["long.mp4"])
+        self.addCleanup(s.close)
+        s.tick()
+        b = Browser(s)
+        b.get()
+        self.assertIn("Unplayable: " + s.path("Show A/Show A - S01E04.mkv"), b.html)
+        self.assertIn("Filler never fits: " + os.path.join(s.filler, "long.mp4"), b.html)
+
+    def test_random_movie_content_length(self):
+        s = Station({**CONFIG, "day_schedule": [
+            {"length": "8h", "repeat": 3, "slots": [{"rule": {"movie": "random"}}]}]},
+            FILES, {**DURATIONS, "m1.mkv": 5400.0, "m2.mkv": 7200.0, "m3.mkv": 6000.0},
+            movies=["m1.mkv", "m2.mkv", "m3.mkv"])
+        self.addCleanup(s.close)
+        b = Browser(s)
+        b.get()
+        self.assertIn("typical 1h40, max 2h00", b.html)
 
     def test_hand_edit_error_shows_until_a_fixed_save_and_retry(self):
         b = self.open()

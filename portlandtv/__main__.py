@@ -15,7 +15,8 @@ TICK = 60  # s; a failed generation is retried on the next tick
 
 
 class FfprobeProber:
-    # shortcut: no duration cache yet, #22 puts one in front of this
+    """Real durations; the service puts library.CachedProber in front."""
+
     def duration(self, path):
         out = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",

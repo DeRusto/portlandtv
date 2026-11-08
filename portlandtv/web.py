@@ -83,30 +83,28 @@ def create_app(service):
         return {**raw, "libraries": raw.get("libraries") or [],
                 "day_schedule": raw.get("day_schedule") or []}
 
-    def durations(rule, shows, groups):
+    def durations(rule, shows, groups, movies, prober):
         """Every length the rule can pick, in seconds."""
         if "show" in rule:
-            names = [rule["show"]]
+            paths = shows.get(rule["show"], [])
         elif "group" in rule:
-            names = groups.get(rule["group"]) or []
+            paths = [p for n in groups.get(rule["group"]) or [] for p in shows.get(n, [])]
         else:
-            # shortcut: random movie lengths unknown until the movie scan lands (#23)
-            return []
-        # shortcut: probes every episode per page view; fine once #22's duration cache sits in front
-        return [service.prober.duration(p) for n in names for p in shows.get(n, [])]
+            paths = movies
+        return [d for d in map(prober.duration, paths) if d]
 
-    def problems(raw, missing_libs):
+    def problems(missing_libs):
         out = []
         if service.error:
             out.append(f"Generation error: {service.error} (retrying)")
         out += [f"Library missing: {p}" for p in missing_libs]
-        # Slots dropped or flagged, unplayable files, filler that never fits:
-        # whatever the latest per-day record lists under "problems".
+        out += [f"Unplayable: {p}" for p in service.unplayable]
         records = sorted(glob.glob(os.path.join(data_dir, "days", "*.json")))
-        if records:
+        if records:  # the latest per-day record's dropped/flagged Slots and filler
             record = store.read_json(records[-1], {})
             date = os.path.basename(records[-1])[:-5]
             out += [f"{date}: {p}" for p in record.get("problems") or []]
+            out += [f"Filler never fits: {p}" for p in record.get("never_fits") or []]
         return out
 
     def render(raw, error=None, status=200):
@@ -116,8 +114,11 @@ def create_app(service):
             error, day_start = error or str(e), config.parse_day_start("06:00")
         libs = [lib for lib in raw["libraries"] if lib.get("path")]
         missing = [lib["path"] for lib in libs if not os.path.isdir(lib["path"])]
-        shows = library.scan_shows([lib for lib in libs if lib["path"] not in missing])
-        groups = raw.get("show_groups") or {}  # shortcut: assumed {name: [shows]}, align with #23
+        found = [lib for lib in libs if lib["path"] not in missing]
+        prober = library.CachedProber(service.prober, os.path.join(data_dir, "durations.json"))
+        shows, _ = library.scan_shows(found, prober)
+        movies = library.scan_movies(found)
+        groups = raw.get("show_groups") or {}
         t = datetime.combine(datetime.min.date(), day_start)
         blocks, total = [], 0
         for b in raw["day_schedule"]:
@@ -134,7 +135,7 @@ def create_app(service):
                     t += timedelta(seconds=length)
             for s in b.get("slots") or []:
                 rule = s.get("rule") or {}
-                lengths = durations(rule, shows, groups)
+                lengths = durations(rule, shows, groups, movies, prober)
                 if lengths:
                     view["typical"] += statistics.median(lengths)
                     view["max"] += max(lengths)
@@ -142,6 +143,7 @@ def create_app(service):
             view["over"] = bool(length) and view["max"] > length
             view["typical"], view["max"] = _hm(view["typical"]), _hm(view["max"])
             blocks.append(view)
+        prober.save()
         choices = ([(f"show:{n}", n) for n in shows]
                    + [(f"group:{n}", f"Show Group: {n}") for n in groups]
                    + [("movie:random", "Random movie")])
@@ -149,7 +151,7 @@ def create_app(service):
             "index.html", raw=raw, blocks=blocks, error=error, kinds=config.KINDS,
             day_start=day_start.strftime("%H:%M"), left=_hm(config.DAY - total),
             choices=choices, known={k for k, _ in choices},
-            problems=problems(raw, missing)), status
+            problems=problems(missing)), status
 
     @app.get("/")
     def index():
