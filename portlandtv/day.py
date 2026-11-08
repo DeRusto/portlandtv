@@ -24,17 +24,26 @@ def end_card(n):
     return f"end-{n}"
 
 
-def resolve_block(cfg, block, b, shows, movies, state, prober, problems):
-    """-> (items, lengths, state) for the Slots that exist and fit the Block.
+def resolve_block(cfg, block, b, shows, movies, state, prober, problems, kept=()):
+    """-> (items, lengths, state, [[rule, path or None] per Slot]) for the Slots
+    that exist and fit the Block.
 
     A Slot naming something missing is dropped and flagged; once a Slot overruns,
     it and the Slots after it are dropped. Dropped Slots advance nothing.
+    `kept`: an earlier build's [rule, path] per Slot; a Slot at the same position
+    with the same rule keeps that path.
     """
-    items, lengths = [], []
+    items, lengths, picked = [], [], []
     for s, rule in enumerate(block["slots"], 1):
-        trial = copy.deepcopy(state)
+        picked.append([rule, None])
+        trial, path = copy.deepcopy(state), None
+        if s <= len(kept) and kept[s - 1][0] == rule and kept[s - 1][1]:
+            try:
+                path = slots.keep(rule, kept[s - 1][1], shows, movies, cfg["show_groups"], trial)
+            except slots.Missing:  # the kept item is gone: fill the Slot fresh
+                trial = copy.deepcopy(state)
         try:
-            path = slots.resolve(rule, shows, movies, cfg["show_groups"], trial)
+            path = path or slots.resolve(rule, shows, movies, cfg["show_groups"], trial)
         except slots.Missing as e:
             problems.append(f"Block {b} Slot {s}: {e}")
             continue
@@ -43,14 +52,15 @@ def resolve_block(cfg, block, b, shows, movies, state, prober, problems):
             break
         items.append(path)
         lengths.append(length)
+        picked[-1][1] = path
         state = trial
-    return items, lengths, state
+    return items, lengths, state, picked
 
 
-def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None):
+def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None, kept=()):
     """-> (ffplayout program, the items picked per Block, the advanced state,
     the filler clips longer than every Break that day, the dropped-Slot problems,
-    the day's sequence of items).
+    the day's sequence of items, [[rule, path or None] per Slot] per Block).
 
     card(name, upcoming item paths) -> PNG path. A name is shared by every Repeat
     only when its items stay inside the Airing; cards reaching past it are per
@@ -58,11 +68,14 @@ def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None):
 
     schedule(name, [(start s, path) per Slot], upcoming Slot index, (start s, end s))
     -> that Airing's schedule display frame PNGs; times are seconds from day start.
+    `kept`: a previous build's last return value for this day ("rebuild today").
     """
-    blocks, problems = [], []
+    blocks, problems, picked = [], [], []
     for b, block in enumerate(cfg["day_schedule"], 1):
-        items, lengths, state = resolve_block(cfg, block, b, shows, movies, state,
-                                              prober, problems)
+        items, lengths, state, p = resolve_block(
+            cfg, block, b, shows, movies, state, prober, problems,
+            kept[b - 1] if b <= len(kept) else ())
+        picked.append(p)
         brk = (block["length"] - sum(lengths)) / max(len(items), 1)
         blocks.append((block, items, lengths, brk))
     state = copy.deepcopy(state)  # never mutate the caller's state
@@ -110,4 +123,4 @@ def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None):
                 program.append({"in": 0, "out": rest, "duration": rest,
                                 "source": card(name, sequence[k:k + AHEAD])})
             t += block["length"]
-    return program, [b[1] for b in blocks], state, never_fits, problems, sequence
+    return program, [b[1] for b in blocks], state, never_fits, problems, sequence, picked

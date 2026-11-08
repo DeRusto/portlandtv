@@ -63,3 +63,25 @@ def _movie(movies, state):
     path = deck.peek(movie_deck, movies)
     deck.take(movie_deck)
     return path
+
+
+def keep(rule, path, shows, movies, groups, state):
+    """Advance `state` as if the Slot had resolved to `path` (an item "rebuild today"
+    keeps). Raises Missing when the rule no longer covers `path`."""
+    if "movie" in rule:
+        if path not in movies:
+            raise Missing(f"movie {path!r} gone")
+        movie_deck = state.setdefault("movies", {})
+        deck.peek(movie_deck, movies)  # sync first, so the kept movie is in the deck
+        if path in movie_deck["left"]:
+            movie_deck["left"].remove(path)
+            movie_deck["aired"].append(path)
+        return path
+    names = [rule["show"]] if "show" in rule else groups.get(rule["group"]) or []
+    name = next((n for n in names if path in shows.get(n, [])), None)
+    if name is None:
+        raise Missing(f"{path!r} no longer covered by the rule")
+    if "group" in rule:
+        state.setdefault("groups", {})[rule["group"]] = {"show": name}
+    state["shows"][name] = {"path": path, "key": list(episode_key(path))}
+    return path

@@ -18,6 +18,7 @@
   <div class="sticky">
     {# first submit button, so Enter in a field saves #}
     <button class="primary" name="action" value="save">Save</button>
+    <button name="action" value="rebuild" title="Saves, then applies the edits to today from the next clip">Save and rebuild today from now</button>
     <span id="left" class="{{ 'ok' if left == '0h00' else 'bad' }}">Still to assign: {{ left }}</span>
     {% if error %}<span class="bad" role="alert">Not saved: {{ error }}</span>{% endif %}
   </div>
