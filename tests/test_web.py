@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from tests.harness import Station, utc
+from tests.harness import Channel, utc
 from tests.web_harness import Browser
 
 FILES = ["Show A/Show A - S01E01.mkv", "Show A/Show A - S01E02.mkv",
@@ -16,7 +16,7 @@ CONFIG = {"day_start": "06:00", "day_schedule": [
 
 class WebTest(unittest.TestCase):
     def open(self, config=CONFIG):
-        s = Station(config, FILES, DURATIONS)
+        s = Channel(config, FILES, DURATIONS)
         self.addCleanup(s.close)
         b = Browser(s)
         b.get()
@@ -101,16 +101,16 @@ class WebTest(unittest.TestCase):
 
     def test_libraries_added_tagged_and_removed(self):
         b = self.open()
-        movies = os.path.join(b.station.root, "movies")
+        movies = os.path.join(b.channel.root, "movies")
         os.mkdir(movies)
         b.submit("add-lib")
         b.submit("add-lib", {"lib1.path": movies, "lib1.kind": "movies"})
         b.submit("del-lib:2")
         b.submit()
         self.assertEqual(b.yaml()["libraries"], [
-            {"path": b.station.library, "kind": "shows"},
+            {"path": b.channel.library, "kind": "shows"},
             {"path": movies, "kind": "movies"}])
-        with open(b.station.config_path) as f:
+        with open(b.channel.config_path) as f:
             text = f.read()
         self.assertIn("kind: movies", text)  # block style, hand-editable
         self.assertIn("length: 8h", text)
@@ -119,10 +119,10 @@ class WebTest(unittest.TestCase):
         b = self.open()
         self.assertIn("Problems", b.html)
         self.assertIn("None.", b.html)
-        gone = os.path.join(b.station.root, "gone")
+        gone = os.path.join(b.channel.root, "gone")
         b.submit("add-lib", {})
         b.submit(changes={"lib1.path": gone})
-        b.station.tick()
+        b.channel.tick()
         b.get()
         self.assertIn(f"Library missing: {gone}", b.html)
         self.assertIn("Generation error:", b.html)
@@ -131,19 +131,19 @@ class WebTest(unittest.TestCase):
         b = self.open({**CONFIG, "day_schedule": [
             CONFIG["day_schedule"][0],
             {"length": "4h", "repeat": 2, "slots": [{"rule": {"show": "Show C"}}]}]})
-        b.station.tick()
+        b.channel.tick()
         b.get()
         self.assertIn("2026-11-09: Block 2 Slot 1: show &#39;Show C&#39; not found", b.html)
-        b.station.tick(utc(2026, 11, 10, 5, 30))  # tomorrow generated, today still airing
+        b.channel.tick(utc(2026, 11, 10, 5, 30))  # tomorrow generated, today still airing
         b.get()
         self.assertIn("2026-11-09: Block 2 Slot 1", b.html)
         self.assertIn("2026-11-10: Block 2 Slot 1", b.html)
-        b.station.tick(utc(2026, 11, 10, 12, 0))  # yesterday's record no longer counts
+        b.channel.tick(utc(2026, 11, 10, 12, 0))  # yesterday's record no longer counts
         b.get()
         self.assertNotIn("2026-11-09: Block 2 Slot 1", b.html)
 
     def test_problems_lists_unplayable_files_and_filler_that_never_fits(self):
-        s = Station(CONFIG, FILES + ["Show A/Show A - S01E04.mkv"],
+        s = Channel(CONFIG, FILES + ["Show A/Show A - S01E04.mkv"],
                     {**DURATIONS, "Show A - S01E04.mkv": None, "long.mp4": 30000.0},
                     filler=["long.mp4"])
         self.addCleanup(s.close)
@@ -154,7 +154,7 @@ class WebTest(unittest.TestCase):
         self.assertIn("Filler never fits: " + os.path.join(s.filler, "long.mp4"), b.html)
 
     def test_random_movie_content_length(self):
-        s = Station({**CONFIG, "day_schedule": [
+        s = Channel({**CONFIG, "day_schedule": [
             {"length": "8h", "repeat": 3, "slots": [{"rule": {"movie": "random"}}]}]},
             FILES, {**DURATIONS, "m1.mkv": 5400.0, "m2.mkv": 7200.0, "m3.mkv": 6000.0},
             movies=["m1.mkv", "m2.mkv", "m3.mkv"])
@@ -166,19 +166,19 @@ class WebTest(unittest.TestCase):
     def test_hand_edit_error_shows_until_a_fixed_save_and_retry(self):
         b = self.open()
         good = b.fields()
-        with open(b.station.config_path, "w") as f:
+        with open(b.channel.config_path, "w") as f:
             f.write("day_schedule: [{length: 7h, repeat: 1, slots: []}]\n")
-        b.station.tick()
+        b.channel.tick()
         b.get()
         self.assertIn("Generation error: Day Schedule totals 7 h", b.html)
-        self.assertIsNone(b.station.playlist("2026-11-09"))  # no fallback schedule
+        self.assertIsNone(b.channel.playlist("2026-11-09"))  # no fallback schedule
 
         r = b.client.post("/", data={**good, "action": "save"}, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        b.station.tick()  # the service's next retry
+        b.channel.tick()  # the service's next retry
         b.get()
         self.assertNotIn("Generation error", b.html)
-        self.assertIsNotNone(b.station.playlist("2026-11-09"))
+        self.assertIsNotNone(b.channel.playlist("2026-11-09"))
 
 
 WEEK = {"day_start": "06:00", "day_schedule": [
@@ -245,8 +245,8 @@ class WeekGridTest(unittest.TestCase):
         self.assertEqual(b.yaml()["day_schedule"][0]["slots"][2], {})
         self.assertEqual(b.html.count('class="cell empty"'), 6)
         self.assertIn("Block 1 Slot 3 is empty every day: skipped", b.html)
-        b.station.tick()
-        self.assertIsNone(b.station.service.error)
+        b.channel.tick()
+        self.assertIsNone(b.channel.service.error)
 
     def test_fill_row_shows_content_and_breaks_per_weekday(self):
         # Show A median 1300 s, Show B 1800 s; 8h Block

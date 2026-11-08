@@ -3,7 +3,7 @@ import unittest
 
 import yaml
 
-from tests.harness import Station, utc
+from tests.harness import Channel, utc
 
 DAY1, DAY2 = utc(2026, 11, 9, 12, 0), utc(2026, 11, 10, 12, 0)
 
@@ -14,8 +14,8 @@ def schedule(show, slots):
 
 
 class LibraryScanTest(unittest.TestCase):
-    def station(self, files, slots, show="Show", **kw):
-        s = Station(schedule(show, slots), files, **kw)
+    def channel(self, files, slots, show="Show", **kw):
+        s = Channel(schedule(show, slots), files, **kw)
         self.addCleanup(s.close)
         return s
 
@@ -24,7 +24,7 @@ class LibraryScanTest(unittest.TestCase):
                 for i in s.playlist(date)["program"] if not i["source"].endswith(".png")]
 
     def test_only_known_extensions_and_no_hidden_files(self):
-        s = self.station([
+        s = self.channel([
             "Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.M2TS",
             "Show/Season 1/Show - S01E03.flv", "Show/Season 1/Show - S01E04.wmv",
             "Show/Season 1/notes.txt", "Show/Season 1/cover.jpg",
@@ -37,7 +37,7 @@ class LibraryScanTest(unittest.TestCase):
             "shows/Show/Season 1/Show - S01E01.mkv"])  # 5th Slot wraps
 
     def test_extras_and_specials_are_skipped(self):
-        s = self.station([
+        s = self.channel([
             "Show/Season 1/Show - S01E01.mkv",
             "Show/Season 1/Show - S01E01-sample.mkv", "Show/Season 1/Show - S01E01.sample.mkv",
             "Show/Season 1/Show - S01E02-trailer.mp4", "Show/Season 1/Show - S01E02-featurette.mp4",
@@ -54,7 +54,7 @@ class LibraryScanTest(unittest.TestCase):
             "shows/Show/Season 1/Show - S01E01.mkv"])
 
     def test_season_placement_and_natural_sort(self):
-        s = self.station([
+        s = self.channel([
             "Show/Season 10/x.mkv",
             "Show/Season 2/Disc 10/ep1.mkv", "Show/Season 2/Disc 9/ep2.mkv",
             "Show/Season 2/Disc 9/ep10.mkv",
@@ -71,7 +71,7 @@ class LibraryScanTest(unittest.TestCase):
             "shows/Show/Season 10/x.mkv"])
 
     def test_same_named_shows_merge_across_libraries_without_duplicates(self):
-        s = self.station(
+        s = self.channel(
             ["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv"],
             slots=3, more_shows={"drive2": [
                 "Show/Season 01/show.s01e02.720p.mkv", "Show/Season 01/show.s01e03.mkv"]})
@@ -81,7 +81,7 @@ class LibraryScanTest(unittest.TestCase):
             "drive2/Show/Season 01/show.s01e03.mkv"])
 
     def test_unplayable_files_are_left_out_and_reported(self):
-        s = self.station(
+        s = self.channel(
             ["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv",
              "Show/Season 1/Show - S01E03.mkv"],
             slots=1, durations={"Show - S01E01.mkv": None,
@@ -93,7 +93,7 @@ class LibraryScanTest(unittest.TestCase):
                           s.path("Show/Season 1/Show - S01E02.mkv")])
 
     def test_unplayable_filler_is_left_out_and_reported(self):
-        s = self.station(["Show/Season 1/Show - S01E01.mkv"], slots=1,
+        s = self.channel(["Show/Season 1/Show - S01E01.mkv"], slots=1,
                          filler=["broken.mp4", ".hidden.mp4", "ok.mp4"],
                          durations={"broken.mp4": None})
         s.tick(DAY1)
@@ -104,7 +104,7 @@ class LibraryScanTest(unittest.TestCase):
         self.assertEqual(s.service.unplayable, [os.path.join(s.filler, "broken.mp4")])
 
     def test_durations_cached_so_only_new_or_changed_files_are_probed(self):
-        s = self.station(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv"],
+        s = self.channel(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv"],
                          slots=1)
         s.tick(DAY1)
         self.assertEqual(sorted(set(s.prober.calls)),
@@ -120,7 +120,7 @@ class LibraryScanTest(unittest.TestCase):
                           s.path("Show/Season 1/Show - S01E03.mkv")])
 
     def test_progress_stores_path_and_key(self):
-        s = self.station(["Show/Season 1/Show - S01E01.mkv", "Show/Season 2/Show - S02E05.mkv"],
+        s = self.channel(["Show/Season 1/Show - S01E01.mkv", "Show/Season 2/Show - S02E05.mkv"],
                          slots=2)
         s.tick(DAY1)
         self.assertEqual(s.read_json("state.json")["shows"]["Show"],
@@ -128,7 +128,7 @@ class LibraryScanTest(unittest.TestCase):
 
     def test_deleted_or_renamed_last_episode_resumes_at_next_by_key(self):
         files = ["Show/Season 1/Show - S01E0%d.mkv" % n for n in (1, 2, 3, 4)]
-        s = self.station(files, slots=2)
+        s = self.channel(files, slots=2)
         s.tick(DAY1)  # airs E01, E02
         os.rename(s.path(files[1]), s.path("Show/Season 1/Show 1x02 (renamed) S01E02.mkv"))
         os.remove(s.path(files[0]))
@@ -136,7 +136,7 @@ class LibraryScanTest(unittest.TestCase):
         self.assertEqual(self.aired(s, "2026-11-10"), ["shows/" + files[2], "shows/" + files[3]])
 
     def test_renamed_show_folder_is_a_new_show_from_e01(self):
-        s = self.station(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv"],
+        s = self.channel(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv"],
                          slots=1)
         s.tick(DAY1)
         os.rename(s.path("Show"), s.path("New Name"))

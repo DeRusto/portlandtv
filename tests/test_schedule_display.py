@@ -4,7 +4,7 @@ import unittest
 
 from PIL import Image
 
-from tests.harness import Station, utc
+from tests.harness import Channel, utc
 from tests.test_cards import FILES, block, card
 
 A1 = ("Show A", "Season 1 · Episode 1 · Pilot")
@@ -26,14 +26,14 @@ def frames(program):
 
 
 class ScheduleDisplayTest(unittest.TestCase):
-    def station(self, *blocks, **kw):
-        s = Station({"day_schedule": list(blocks)}, FILES, **kw)
+    def channel(self, *blocks, **kw):
+        s = Channel({"day_schedule": list(blocks)}, FILES, **kw)
         self.addCleanup(s.close)
         return s
 
     def test_every_3rd_break_shows_the_airing_before_its_card(self):
         # 4 x 600 s Slots in 8 h: 6600 s Breaks, so the Slots start on the hour
-        s = self.station(block("8h", 3, "Show A", "Show B", "Show C", "Show D"))
+        s = self.channel(block("8h", 3, "Show A", "Show B", "Show C", "Show D"))
         s.tick(utc(2026, 11, 9, 12, 0))
         program = s.playlist("2026-11-09")["program"]
         airing = program[:9]
@@ -56,7 +56,7 @@ class ScheduleDisplayTest(unittest.TestCase):
 
     def test_long_airing_spans_frames_of_six_rows(self):
         # 7 x 600 s Slots in 14 h: 6600 s Breaks; displays in Breaks 3 and 6
-        s = self.station(block("14h", 1, "Show A", "Show B", "Show C", "Show D",
+        s = self.channel(block("14h", 1, "Show A", "Show B", "Show C", "Show D",
                                "Show A", "Show B", "Show C"),
                          block("10h", 1, "Show A"))
         s.tick(utc(2026, 11, 9, 12, 0))
@@ -79,7 +79,7 @@ class ScheduleDisplayTest(unittest.TestCase):
         self.assertEqual(program[i + 2]["duration"], 6580)
 
     def test_display_moves_to_the_next_break_when_it_does_not_fit(self):
-        s = self.station(block("8h", 3, "Show A", "Show B", "Show C", "Show D"),
+        s = self.channel(block("8h", 3, "Show A", "Show B", "Show C", "Show D"),
                          filler=["a.mp4", "b.mp4", "c.mp4", "d.mp4"],
                          durations={"a.mp4": 4000, "b.mp4": 4000, "c.mp4": 6595,
                                     "d.mp4": 4000})

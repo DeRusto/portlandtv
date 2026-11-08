@@ -4,7 +4,7 @@ import unittest
 
 from PIL import Image
 
-from tests.harness import Station, utc
+from tests.harness import Channel, utc
 
 FILES = [
     "Show A/Season 1/Show A - S01E01 - Pilot.mkv",
@@ -44,13 +44,13 @@ def breaks(program):
 
 
 class NextUpCardTest(unittest.TestCase):
-    def station(self, *blocks):
-        s = Station({"day_schedule": list(blocks)}, FILES)
+    def channel(self, *blocks):
+        s = Channel({"day_schedule": list(blocks)}, FILES)
         self.addCleanup(s.close)
         return s
 
     def test_card_names_next_item_and_the_two_after_it(self):
-        s = self.station(block("8h", 3, "Show A", "Show A", "Show B"))
+        s = self.channel(block("8h", 3, "Show A", "Show A", "Show B"))
         s.ffplayout.size = (1280, 720)
         s.tick(utc(2026, 11, 9, 12, 0))
         first = breaks(s.playlist("2026-11-09")["program"])[0]
@@ -59,7 +59,7 @@ class NextUpCardTest(unittest.TestCase):
             self.assertEqual(im.size, (1280, 720))
 
     def test_unreachable_ffplayout_uses_the_last_known_output_size(self):
-        s = self.station(block("24h", 1, "Show A", "Show B"))
+        s = self.channel(block("24h", 1, "Show A", "Show B"))
         s.ffplayout.size = (1280, 720)
         s.tick(utc(2026, 11, 9, 12, 0))
         s.ffplayout.size = OSError("ffplayout down")
@@ -69,7 +69,7 @@ class NextUpCardTest(unittest.TestCase):
             self.assertEqual(im.size, (1280, 720))
 
     def test_never_reached_ffplayout_draws_cards_at_1080p(self):
-        s = self.station(block("24h", 1, "Show A", "Show B"))
+        s = self.channel(block("24h", 1, "Show A", "Show B"))
         s.ffplayout.size = OSError("ffplayout down")
         s.tick(utc(2026, 11, 9, 12, 0))
         self.assertIsNone(s.service.error)
@@ -77,7 +77,7 @@ class NextUpCardTest(unittest.TestCase):
             self.assertEqual(im.size, (1920, 1080))
 
     def test_cards_inside_the_airing_are_shared_by_repeats(self):
-        s = self.station(block("12h", 2, "Show A", "Show B", "Show C", "Show D"))
+        s = self.channel(block("12h", 2, "Show A", "Show B", "Show C", "Show D"))
         s.tick(utc(2026, 11, 9, 12, 0))
         cards = breaks(s.playlist("2026-11-09")["program"])
         first, second = cards[:4], cards[4:]
@@ -87,13 +87,13 @@ class NextUpCardTest(unittest.TestCase):
         self.assertEqual(card(first[1]), {"up_next": C1, "then": [D9, A1]})
 
     def test_cards_look_past_the_block_into_the_next_one(self):
-        s = self.station(block("12h", 1, "Show A", "Show B"), block("12h", 1, "Show C"))
+        s = self.channel(block("12h", 1, "Show A", "Show B"), block("12h", 1, "Show C"))
         s.tick(utc(2026, 11, 9, 12, 0))
         self.assertEqual(card(breaks(s.playlist("2026-11-09")["program"])[0]),
                          {"up_next": B5, "then": [C1]})
 
     def test_movie_is_named_by_its_file_as_a_feature_film(self):
-        s = Station({"day_schedule": [{"length": "24h", "repeat": 1, "slots": [
+        s = Channel({"day_schedule": [{"length": "24h", "repeat": 1, "slots": [
             {"rule": {"show": "Show A"}}, {"rule": {"movie": "random"}}]}]},
             FILES, movies=["Collection/Heat (1995)/Heat (1995).mkv"])
         self.addCleanup(s.close)
@@ -103,7 +103,7 @@ class NextUpCardTest(unittest.TestCase):
                           "then": []})
 
     def test_last_cards_of_the_day_are_placeholders_until_tomorrow_is_built(self):
-        s = self.station(block("12h", 2, "Show A", "Show B", "Show C", "Show D"))
+        s = self.channel(block("12h", 2, "Show A", "Show B", "Show C", "Show D"))
         s.tick(utc(2026, 11, 9, 12, 0))
         last = breaks(s.playlist("2026-11-09")["program"])[4:]
         self.assertEqual([card(c) for c in last], [
@@ -125,14 +125,14 @@ class NextUpCardTest(unittest.TestCase):
         ])
 
     def test_placeholder_of_an_empty_first_block_is_filled_in_too(self):
-        s = self.station({"length": "12h", "repeat": 1, "slots": []}, block("12h", 1, "Show A"))
+        s = self.channel({"length": "12h", "repeat": 1, "slots": []}, block("12h", 1, "Show A"))
         s.tick(utc(2026, 11, 9, 12, 0))
         s.tick(utc(2026, 11, 10, 5, 0))
         self.assertEqual([card(c) for c in breaks(s.playlist("2026-11-09")["program"])],
                          [{"up_next": A1, "then": [A2]}, {"up_next": A2, "then": []}])
 
     def test_placeholders_stay_if_the_next_day_fails_to_build(self):
-        s = self.station(block("24h", 1, "Show A", "Show B"))
+        s = self.channel(block("24h", 1, "Show A", "Show B"))
         s.tick(utc(2026, 11, 9, 12, 0))
         last = breaks(s.playlist("2026-11-09")["program"])[-1]
 

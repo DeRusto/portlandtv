@@ -1,4 +1,4 @@
-"""Seam 2 harness: a browser-ish Flask test client over a Station's service."""
+"""Seam 2 harness: a browser-ish Flask test client over a Channel's service."""
 from html.parser import HTMLParser
 
 import yaml
@@ -30,9 +30,9 @@ class _Form(HTMLParser):
 
 
 class Browser:
-    def __init__(self, station):
-        self.station = station
-        self.client = create_app(station.service).test_client()
+    def __init__(self, channel):
+        self.channel = channel
+        self.client = create_app(channel.service).test_client()
         self.html = None
 
     def get(self):
@@ -54,5 +54,5 @@ class Browser:
         return r
 
     def yaml(self):
-        with open(self.station.config_path) as f:
+        with open(self.channel.config_path) as f:
             return yaml.safe_load(f)

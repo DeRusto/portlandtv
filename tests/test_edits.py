@@ -5,7 +5,7 @@ import unittest
 import yaml
 
 from portlandtv import ffplayout
-from tests.harness import Station, utc
+from tests.harness import Channel, utc
 from tests.web_harness import Browser
 
 FILES = ["Show A/Show A - S01E01.mkv", "Show A/Show A - S01E02.mkv",
@@ -20,7 +20,7 @@ CONFIG = {"day_start": "06:00", "day_schedule": [
 
 class EditsTest(unittest.TestCase):
     def open(self, config=CONFIG, now=utc(2026, 11, 9, 12, 0)):
-        s = Station(config, FILES, DURATIONS, now=now)
+        s = Channel(config, FILES, DURATIONS, now=now)
         self.addCleanup(s.close)
         s.tick()
         b = Browser(s)
@@ -117,9 +117,8 @@ class EditsTest(unittest.TestCase):
         self.assertEqual(s.ffplayout.calls[-1], ("set_day_start", "07:00"))
 
     def test_unconfigured_ffplayout_still_generates_and_shows_the_push_error(self):
-        s = Station(CONFIG, FILES, DURATIONS)
+        s = Channel(CONFIG, FILES, DURATIONS, ffplayout=ffplayout.Unconfigured())
         self.addCleanup(s.close)
-        s.service.ffplayout = ffplayout.Unconfigured()
         s.tick()
         self.assertIsNotNone(s.playlist("2026-11-09"))
         self.assertIsNone(s.service.error)
@@ -135,7 +134,7 @@ class RebuildWeekdayTest(unittest.TestCase):
             return {"day_start": "06:00", "day_schedule": [
                 {"length": "12h", "repeat": 2, "slots": [
                     {"rule": {"show": first}}, {"weekdays": {"mon": mon, "tue": tue}}]}]}
-        s = Station(config("Show A", {"show": "Show A"}, {"show": "Show B"}), FILES, DURATIONS)
+        s = Channel(config("Show A", {"show": "Show A"}, {"show": "Show B"}), FILES, DURATIONS)
         self.addCleanup(s.close)
         s.tick()
 

@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from tests.harness import PER_AIRING_CARD, Station, utc
+from tests.harness import PER_AIRING_CARD, Channel, utc
 
 SHOW_FILES = [
     "Show A/Season 10/Show A - S10E01.mkv",
@@ -33,13 +33,13 @@ def starts(program):
 
 
 class BroadcastDayTest(unittest.TestCase):
-    def station(self, config=EIGHT_BY_THREE, **kw):
-        s = Station(config, SHOW_FILES, DURATIONS, **kw)
+    def channel(self, config=EIGHT_BY_THREE, **kw):
+        s = Channel(config, SHOW_FILES, DURATIONS, **kw)
         self.addCleanup(s.close)
         return s
 
     def test_startup_generates_current_day_with_verbatim_repeats(self):
-        s = self.station()
+        s = self.channel()
         s.tick(utc(2026, 11, 9, 12, 0))
 
         playlist = s.playlist("2026-11-09")
@@ -70,14 +70,14 @@ class BroadcastDayTest(unittest.TestCase):
         self.assertEqual(sum(i["out"] - i["in"] for i in program), 86400)
 
     def test_schedule_not_totalling_24h_is_rejected_with_error(self):
-        s = self.station({"day_schedule": [{"length": "8h", "repeat": 2, "slots": [
+        s = self.channel({"day_schedule": [{"length": "8h", "repeat": 2, "slots": [
             {"rule": {"show": "Show A"}}]}]})
         s.tick()
         self.assertIsNone(s.playlist("2026-11-09"))
         self.assertIn("24 h", s.service.error)
 
     def test_blocks_air_back_to_back_from_day_start(self):
-        s = self.station({"day_start": "05:30", "day_schedule": [
+        s = self.channel({"day_start": "05:30", "day_schedule": [
             {"length": "6h", "repeat": 2, "slots": [{"rule": {"show": "Show A"}}]},
             {"length": "4h", "repeat": 3, "slots": [{"rule": {"show": "Show B"}},
                                                     {"rule": {"show": "Show A"}}]},
@@ -94,7 +94,7 @@ class BroadcastDayTest(unittest.TestCase):
                           s.path("Show A/Season 1/Show A - S01E02.mkv")])
 
     def test_unquoted_day_start_in_hand_written_yaml(self):
-        s = self.station()
+        s = self.channel()
         with open(s.config_path, "a") as f:
             f.write("day_start: 07:15\n")  # YAML 1.1 reads this as the integer 435
         s.tick(utc(2026, 11, 9, 6, 0))
@@ -102,13 +102,13 @@ class BroadcastDayTest(unittest.TestCase):
         self.assertIsNone(s.playlist("2026-11-09"))
 
     def test_before_day_start_the_current_day_is_yesterdays(self):
-        s = self.station()
+        s = self.channel()
         s.tick(utc(2026, 11, 9, 3, 0))
         self.assertIsNotNone(s.playlist("2026-11-08"))
         self.assertIsNone(s.playlist("2026-11-09"))
 
     def test_next_day_generated_one_hour_before_it_starts(self):
-        s = self.station()
+        s = self.channel()
         s.tick(utc(2026, 11, 9, 12, 0))
         s.tick(utc(2026, 11, 10, 4, 59))
         self.assertIsNone(s.playlist("2026-11-10"))
@@ -120,7 +120,7 @@ class BroadcastDayTest(unittest.TestCase):
              s.path("Show B/Season 01/b.s01e02.mp4")])
 
     def test_ticks_within_a_day_do_not_regenerate_or_advance(self):
-        s = self.station()
+        s = self.channel()
         s.tick(utc(2026, 11, 9, 12, 0))
         first = s.playlist("2026-11-09")
         s.tick(utc(2026, 11, 9, 13, 0))
@@ -129,7 +129,7 @@ class BroadcastDayTest(unittest.TestCase):
                          s.path("Show A/Season 1/Show A - S01E02.mkv"))
 
     def test_days_never_generated_advance_nothing(self):
-        s = self.station()
+        s = self.channel()
         s.tick(utc(2026, 11, 9, 12, 0))
         s.tick(utc(2026, 11, 14, 12, 0))  # laptop was off 10th-13th
         self.assertIsNone(s.playlist("2026-11-12"))
@@ -137,7 +137,7 @@ class BroadcastDayTest(unittest.TestCase):
                          s.path("Show A/Season 2/Show A - S02E01.mkv"))
 
     def test_state_and_day_record(self):
-        s = self.station()
+        s = self.channel()
         s.tick(utc(2026, 11, 9, 12, 0))
         state_after_day1 = s.read_json("state.json")
         self.assertEqual(state_after_day1["shows"], {
@@ -153,7 +153,7 @@ class BroadcastDayTest(unittest.TestCase):
             s.path("Show B/Season 01/b.s01e02.mp4")]])
 
     def test_no_temp_files_left_behind(self):
-        s = self.station()
+        s = self.channel()
         s.tick()
         leftovers = [f for _, _, fs in os.walk(s.root) for f in fs if f.startswith(".tmp")]
         self.assertEqual(leftovers, [])

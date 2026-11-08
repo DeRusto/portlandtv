@@ -3,7 +3,7 @@ import json
 import os
 import unittest
 
-from tests.harness import Station
+from tests.harness import Channel
 from tests.web_harness import Browser
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -25,7 +25,7 @@ CONFIG = {
 
 class ShowListTest(unittest.TestCase):
     def open(self, config=CONFIG, state=None):
-        s = Station(config, FILES)
+        s = Channel(config, FILES)
         self.addCleanup(s.close)
         if state:
             with open(os.path.join(s.root, "state.json"), "w") as f:
@@ -45,7 +45,7 @@ class ShowListTest(unittest.TestCase):
         self.assertEqual(b.yaml()["show_list"], CONFIG["show_list"])
 
     def test_show_list_entries_must_be_shows_or_show_groups(self):
-        s = Station({**CONFIG, "show_list": [{"movie": "random"}]}, FILES)
+        s = Channel({**CONFIG, "show_list": [{"movie": "random"}]}, FILES)
         self.addCleanup(s.close)
         s.tick()
         self.assertIn("Show List", s.service.error)

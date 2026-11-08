@@ -22,10 +22,11 @@ def utc(*args):
     return datetime(*args, tzinfo=timezone.utc)
 
 
-class Station:
+class Channel:
     def __init__(self, config, files=(), durations=None, now=None, filler=None,
-                 more_shows=None, movies=None):
-        """`more_shows`: {folder name under root: [rel paths]}, extra `shows` Libraries."""
+                 more_shows=None, movies=None, ffplayout=None):
+        """`more_shows`: {folder name under root: [rel paths]}, extra `shows` Libraries.
+        `ffplayout`: the client the Service talks to (default a FakeFfplayout)."""
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         self.library = os.path.join(self.root, "shows")
@@ -55,7 +56,7 @@ class Station:
         self.playlists = os.path.join(self.root, "playlists")
         self.prober = FakeProber(durations)
         self.clock = FakeClock(now or utc(2026, 11, 9, 12, 0))
-        self.ffplayout = FakeFfplayout()
+        self.ffplayout = ffplayout or FakeFfplayout()
         self.service = Service(self.config_path, self.playlists,
                                prober=self.prober, clock=self.clock,
                                ffplayout=self.ffplayout)
