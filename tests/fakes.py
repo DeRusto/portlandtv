@@ -24,5 +24,9 @@ class FakeClock:
 class FakeFfplayout:
     """Records every call so tests can check what was pushed."""
 
-    def __init__(self):
+    def __init__(self, size=(1920, 1080)):
         self.calls = []
+        self.size = size  # output resolution, for the cards
+
+    def output_size(self):
+        return self.size

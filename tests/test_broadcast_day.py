@@ -47,8 +47,11 @@ class BroadcastDayTest(unittest.TestCase):
         program = playlist["program"]
         self.assertEqual(len(program), 18)
         airing = program[:6]
-        self.assertEqual(program[6:12], airing)
-        self.assertEqual(program[12:], airing)
+        # verbatim apart from the cards, which here all look past their Airing
+        without_cards = [{**i, "source": None} for i in airing[1::2]]
+        for repeat in (program[6:12], program[12:]):
+            self.assertEqual(repeat[::2], airing[::2])
+            self.assertEqual([{**i, "source": None} for i in repeat[1::2]], without_cards)
         self.assertEqual(
             [i["source"] for i in airing[::2]],
             [s.path("Show A/Season 1/Show A - S01E01.mkv"),

@@ -1,0 +1,61 @@
+"""Card renderer: the broadcast-style "next up" still, plus its content record."""
+import os
+import re
+
+from PIL import Image, ImageDraw, ImageFont
+
+from portlandtv import store
+
+AMBER, BG, RULE, DIM, SUB, TXT = "#e0a526", "#0b0d12", "#2a2e38", "#6b7080", "#a8acb8", "#d8dbe3"
+FONTS = {"sans": "DejaVuSans.ttf", "bold": "DejaVuSans-Bold.ttf"}
+
+
+def describe(path, show_of):
+    """{name, subtitle} for an item path; `show_of` maps episode paths to show names."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if path not in show_of:
+        # shortcut: anything not in a show is a movie named by its file, until movies are scanned
+        return {"name": stem, "subtitle": "Feature film"}
+    m = re.search(r"s(\d+)e(\d+)", stem, re.I)
+    if not m:
+        return {"name": show_of[path], "subtitle": ""}
+    sub = f"Season {int(m[1])} · Episode {int(m[2])}"
+    title = stem[m.end():].strip(" -._")
+    return {"name": show_of[path], "subtitle": f"{sub} · {title}" if title else sub}
+
+
+def render(path, items, size):
+    """Write the card for `items` (up next, then up to two more; none = plain card)."""
+    record = {"up_next": items[0] if items else None, "then": list(items[1:3])}
+    W, H = size
+    s = H / 1080  # the layout is drawn for 1920x1080 and scaled to the frame
+
+    def font(kind, px):
+        return ImageFont.truetype(FONTS[kind], max(1, round(px * s)))
+
+    def fit(d, text, kind, px, max_w):
+        """Shrink until the text fits on one line."""
+        while px > 12 and d.textlength(text, font=font(kind, px)) > max_w * s:
+            px -= 2
+        return font(kind, px)
+
+    im = Image.new("RGB", (W, H), BG)
+    d = ImageDraw.Draw(im)
+    d.rectangle((0, 0, round(24 * s), H), fill=AMBER)
+    x, wide = round(140 * s), W / s - 280
+    if items:
+        nxt = items[0]
+        d.text((x, 260 * s), "UP NEXT", font=font("bold", 48), fill=AMBER)
+        d.text((x, 330 * s), nxt["name"], font=fit(d, nxt["name"], "bold", 112, wide), fill="white")
+        d.text((x, 480 * s), nxt["subtitle"], font=fit(d, nxt["subtitle"], "sans", 48, wide), fill=SUB)
+    if items[1:]:
+        d.line((x, 640 * s, W - x, 640 * s), fill=RULE, width=max(1, round(3 * s)))
+        d.text((x, 680 * s), "THEN", font=font("bold", 36), fill=DIM)
+        col = (wide - 60) / 2
+        for i, it in enumerate(items[1:3]):
+            cx = x + i * (col + 60) * s
+            d.text((cx, 740 * s), it["name"], font=fit(d, it["name"], "bold", 44, col), fill=TXT)
+            d.text((cx, 800 * s), it["subtitle"], font=fit(d, it["subtitle"], "sans", 30, col), fill=DIM)
+    d.text((W - x, H - 110 * s), "PORTLAND TV", font=font("bold", 40), fill=AMBER, anchor="ra")
+    store.write_atomic(path, lambda f: im.save(f, "PNG"))
+    store.write_json(os.path.splitext(path)[0] + ".json", record)
