@@ -24,6 +24,10 @@ _Avoid_: Lineup, rotation
 A position in a Block defined by a rule (e.g. "next episode of Show A"), filled with a concrete item once per Broadcast Day.
 _Avoid_: Entry, placeholder
 
+**Show Group**:
+An ordered list of shows that a Slot plays through one after another, as if they were one long show.
+_Avoid_: Rotation, block
+
 **Broadcast Day**:
 The 24-hour period, starting at a configured clock time, over which a Day Schedule runs and Slots stay frozen.
 _Avoid_: Calendar day
