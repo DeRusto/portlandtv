@@ -34,6 +34,12 @@ class FakeFfplayout:
     def __init__(self, size=(1920, 1080)):
         self.calls = []
         self.size = size  # output resolution, for the cards
+        self.fail = None  # an exception instance set_day_start raises
 
     def output_size(self):
         return self.size
+
+    def set_day_start(self, hhmm):
+        if self.fail:
+            raise self.fail
+        self.calls.append(("set_day_start", hhmm))

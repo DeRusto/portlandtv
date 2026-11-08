@@ -147,7 +147,8 @@ class DistributeTest(unittest.TestCase):
             {"rule": {"show": "D"}},
             {"weekdays": dict(zip(DAYS, [a] * 7))},
             {"weekdays": dict(zip(DAYS, [a, a, bb, bb, bb, c, c]))}])
-        self.assertIn("<td>A</td><td>8</td><td>9</td><td>0.9</td>", b.html)
+        # A now has 9 cells a week (saving also builds today, so episodes left vary)
+        self.assertRegex(b.html, r"<td>A</td><td>\d+</td><td>9</td>")
 
     def test_cancel_leaves_everything_as_it_was(self):
         b = self.open()

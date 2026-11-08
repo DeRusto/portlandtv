@@ -303,14 +303,16 @@ def create_app(service):
             for (_, _, s), rules in zip(distributed(raw), new):
                 s["weekdays"] = {d: dict(r) for d, r in zip(config.WEEKDAYS, rules)}
             action = "save"
-        if action != "save":
+        if action not in ("save", "rebuild"):
             _apply(raw, action, request.form.get("sl.add", ""))
             return render(raw)
         try:
             config.save(service.config_path, raw)
         except config.ConfigError as e:
             return render(raw, error=str(e), status=400)
-        # #28 hooks the scheduler's on-save regeneration in here.
+        service.on_save()
+        if action == "rebuild":
+            service.rebuild_today()
         return redirect("/", 303)
 
     return app
