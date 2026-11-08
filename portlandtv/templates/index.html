@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PortlandTV</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+<h1>PortlandTV</h1>
+<form method="post" action="/">
+  <div class="sticky">
+    {# first submit button, so Enter in a field saves #}
+    <button class="primary" name="action" value="save">Save</button>
+    <span id="left" class="{{ 'ok' if left == '0h00' else 'bad' }}">Still to assign: {{ left }}</span>
+    {% if error %}<span class="bad" role="alert">Not saved: {{ error }}</span>{% endif %}
+  </div>
+
+  <div class="row">
+    <main class="grow">
+      <h2>Day Schedule</h2>
+      <p class="mute">The Broadcast Day starts at {{ day_start }} UTC.</p>
+      {% for b in blocks %}{% set i = loop.index0 %}
+      <section class="card block">
+        <h3>Block {{ loop.index }}: {{ b.raw.length }} × {{ b.raw.repeat }}
+          · {% if b.airs %}Airs {{ b.airs | join(', ') }} UTC{% else %}bad length or repeat{% endif %}</h3>
+        <p>
+          <label>Length <input name="b{{ i }}.length" value="{{ b.raw.length }}" size="6" data-length></label>
+          <label>Repeat <input name="b{{ i }}.repeat" value="{{ b.raw.repeat }}" size="3" inputmode="numeric" data-repeat></label>
+          <span class="{{ 'bad' if b.over else 'mute' }}">Content: typical {{ b.typical }}, max {{ b.max }}{% if b.over %}. The maximum exceeds the Block.{% endif %}</span>
+          <button class="small" name="action" value="del-block:{{ i }}">Remove Block</button>
+        </p>
+        <table>
+          <tr><th>Slot</th><th>Rule</th><th></th></tr>
+          {% for key in b.slots %}{% set j = loop.index0 %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td><select name="b{{ i }}.s{{ j }}.rule" aria-label="Block {{ i + 1 }} Slot {{ j + 1 }} rule">
+              <option value=""{% if not key %} selected{% endif %}>— choose a rule</option>
+              {% if key and key not in known %}<option value="{{ key }}" selected>{{ key }} (missing)</option>{% endif %}
+              {% for value, label in choices %}<option value="{{ value }}"{% if value == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select></td>
+            <td class="nowrap">
+              <button class="small" name="action" value="up-slot:{{ i }}:{{ j }}" aria-label="Move up">↑</button>
+              <button class="small" name="action" value="down-slot:{{ i }}:{{ j }}" aria-label="Move down">↓</button>
+              <button class="small" name="action" value="del-slot:{{ i }}:{{ j }}" aria-label="Remove Slot">×</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </table>
+        <button class="small" name="action" value="add-slot:{{ i }}">Add Slot</button>
+      </section>
+      {% endfor %}
+      <button name="action" value="add-block">Add Block</button>
+
+      <h2>Libraries</h2>
+      <table>
+        <tr><th>Folder</th><th>Kind</th><th></th></tr>
+        {% for lib in raw.libraries %}{% set k = loop.index0 %}
+        <tr>
+          <td><input name="lib{{ k }}.path" value="{{ lib.path }}" aria-label="Library {{ k + 1 }} folder" class="wide"></td>
+          <td><select name="lib{{ k }}.kind" aria-label="Library {{ k + 1 }} kind">
+            {% for kind in kinds %}<option value="{{ kind }}"{% if kind == lib.kind %} selected{% endif %}>{{ kind }}</option>{% endfor %}
+          </select></td>
+          <td><button class="small" name="action" value="del-lib:{{ k }}" aria-label="Remove Library">×</button></td>
+        </tr>
+        {% endfor %}
+      </table>
+      <button class="small" name="action" value="add-lib">Add Library</button>
+    </main>
+
+    <aside class="side card" id="problems">
+      <h2>Problems</h2>
+      {% if problems %}
+      <ul>{% for p in problems %}<li class="bad">{{ p }}</li>{% endfor %}</ul>
+      {% else %}<p class="ok">None.</p>{% endif %}
+    </aside>
+  </div>
+</form>
+</body>
+</html>
