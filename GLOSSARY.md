@@ -28,6 +28,10 @@ _Avoid_: Entry, placeholder
 An ordered list of shows that a Slot plays through one after another, as if they were one long show.
 _Avoid_: Rotation, block
 
+**Show List**:
+The ordered list of shows and Show Groups that the app shares out across the weekdays, giving each a share of the week in proportion to its remaining episodes.
+_Avoid_: Lineup, rotation
+
 **Broadcast Day**:
 The 24-hour period, starting at a configured UTC clock time (no daylight-saving changes), over which a Day Schedule runs and Slots stay frozen.
 _Avoid_: Calendar day
