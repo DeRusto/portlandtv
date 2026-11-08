@@ -1,0 +1,262 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Wayfinder ticket #18:
+  "How does the web UI show and edit the weekly schedule and its distribution?"
+  Three variants of the schedule page, switchable via ?variant=A|B|C (or the bottom bar / arrow keys).
+  All state is in memory; reload resets it. Library data is invented.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: weekly schedule</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --ink:#1d1d1f; --mute:#6b6b70; --line:#dcdcd8; --warn:#b54708; --bad:#c0262d; --ok:#1f7a3a; --accent:#d97706; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--ink); padding:16px 16px 80px; }
+  h1 { font-size:18px; margin:0 0 4px; } h2 { font-size:15px; margin:0 0 8px; } h3 { font-size:13px; margin:12px 0 6px; color:var(--mute); text-transform:uppercase; letter-spacing:.04em; }
+  .sub { color:var(--mute); margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  button { font:inherit; padding:5px 10px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; }
+  button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+  button.small { padding:1px 6px; font-size:12px; }
+  select { font:inherit; font-size:12px; max-width:100%; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { border:1px solid var(--line); padding:4px; text-align:left; vertical-align:middle; }
+  th { background:#f0f0ec; font-weight:600; font-size:12px; }
+  .chip { display:inline-block; border-radius:4px; padding:2px 6px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .cellsel { width:100%; border:none; border-radius:4px; padding:3px; appearance:none; cursor:pointer; }
+  .empty { background:repeating-linear-gradient(45deg,#fff,#fff 4px,#fde8e8 4px,#fde8e8 8px) !important; color:var(--bad); }
+  .changed { outline:2px solid var(--accent); outline-offset:-2px; }
+  .warn { color:var(--warn); } .bad { color:var(--bad); } .ok { color:var(--ok); } .mute { color:var(--mute); }
+  .row { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+  .grow { flex:1 1 560px; min-width:0; } .side { flex:0 1 340px; }
+  .warnings li { margin:2px 0; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; }
+  .modal { background:#fff; border-radius:10px; padding:16px; max-width:1100px; width:100%; max-height:90vh; overflow:auto; }
+  .tabs { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:12px; }
+  .tabs button.on { background:var(--ink); color:#fff; }
+  .dots { display:inline-flex; gap:2px; } .dots span { width:10px; height:10px; border-radius:2px; display:inline-block; border:1px solid rgba(0,0,0,.1); }
+  .sq { width:100%; height:30px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; cursor:pointer; border:1px solid rgba(0,0,0,.08); }
+  .bar { height:8px; background:#eee; border-radius:4px; overflow:hidden; } .bar > i { display:block; height:100%; }
+  .sticky { position:sticky; top:0; z-index:5; background:#fff7e6; border:1px solid #f5c26b; border-radius:8px; padding:8px 12px; margin-bottom:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .scroll { overflow-x:auto; }
+  /* prototype switcher: deliberately not part of the design */
+  #switcher { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#111; color:#fff; border-radius:999px; padding:6px 10px; display:flex; gap:10px; align-items:center; box-shadow:0 4px 18px rgba(0,0,0,.35); z-index:20; font-size:13px; }
+  #switcher button { background:transparent; color:#fff; border:none; font-size:16px; padding:0 6px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"></div>
+<div id="switcher"><button id="prev" aria-label="Previous variant">◀</button><span id="vlabel"></span><button id="next" aria-label="Next variant">▶</button></div>
+<script>
+// ---------- model (shared by all variants) ----------
+const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+const DAYN = {mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun'};
+const SHOWS = { 'Harbor Patrol':{left:40,len:44}, 'Deep Ocean':{left:12,len:50}, 'Star Watch':{left:88,len:42},
+  'Galley Kings':{left:24,len:22}, 'Night Desk':{left:30,len:45}, 'Old West':{left:60,len:48}, 'Morning Brief':{left:200,len:25} };
+const GROUPS = { 'Cartoon Hour':{left:52,len:22} };
+const MOVIE_LEN = 105;
+const PALETTE = ['#cfe3ff','#d6f5d6','#ffe1c4','#ecd9ff','#ffd6e0','#d4f1f4','#fff3b0','#e2e2ff'];
+
+const S = {
+  showList: [{show:'Harbor Patrol'},{show:'Star Watch'},{group:'Cartoon Hour'},{show:'Deep Ocean'},{show:'Old West'}],
+  blocks: [{ length:8, repeat:3, start:'06:00', slots:[
+    {id:1, rule:{show:'Morning Brief'}},
+    {id:2, weekdays:null}, {id:3, weekdays:null},
+    {id:4, rule:{movie:'random'}},
+    {id:5, weekdays:null}, {id:6, weekdays:null},
+  ]}],
+  preview: null,   // {before, after} snapshots of distributed cells while confirming
+};
+const key = r => !r ? '' : r.show ? 'show:'+r.show : r.group ? 'group:'+r.group : 'movie:random';
+const fromKey = k => !k ? null : k === 'movie:random' ? {movie:'random'} : k.startsWith('show:') ? {show:k.slice(5)} : {group:k.slice(6)};
+const label = r => !r ? '— empty' : r.show ? r.show : r.group ? '▣ '+r.group : '🎬 Random movie';
+const dur = r => !r ? 0 : r.show ? SHOWS[r.show].len : r.group ? GROUPS[r.group].len : MOVIE_LEN;
+const left = r => r.show ? SHOWS[r.show].left : r.group ? GROUPS[r.group].left : Infinity;
+const listIdx = r => S.showList.findIndex(e => key(e) === key(r));
+const color = r => { const i = r ? listIdx(r) : -1; return i < 0 ? (r ? '#e6e6e6' : '#fff') : PALETTE[i % PALETTE.length]; };
+const allSlots = () => S.blocks.flatMap((b,bi) => b.slots.map((s,si) => ({...s, s, bi, si, name:`Slot ${si+1}`})));
+const distSlots = () => allSlots().filter(x => x.s.weekdays !== undefined);
+const ruleOn = (s, d) => s.weekdays !== undefined ? (s.weekdays ? s.weekdays[d] : null) : s.rule;
+const allRules = () => [...Object.keys(SHOWS).map(n=>({show:n})), ...Object.keys(GROUPS).map(n=>({group:n})), {movie:'random'}];
+const fmt = m => `${Math.floor(m/60)}h${String(Math.round(m%60)).padStart(2,'0')}`;
+const hm = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2,'0')+':'+String(Math.round(m%60)).padStart(2,'0'); };
+const toMin = t => +t.slice(0,2)*60 + +t.slice(3);
+
+// Distribution as decided in #16: cells in proportion to remaining episodes, min 1 each,
+// contiguous runs Slot by Slot, Mon→Sun, in Show List order; deterministic.
+function distribute() {
+  const ds = distSlots(), N = ds.length * 7, E = S.showList.length;
+  if (!E || E > N) return null;
+  const w = S.showList.map(left), tot = w.reduce((a,b)=>a+b,0);
+  const quota = w.map(x => (N - E) * x / tot), counts = quota.map(q => 1 + Math.floor(q));
+  let rest = N - counts.reduce((a,b)=>a+b,0);
+  quota.map((q,i)=>[q-Math.floor(q),i]).sort((a,b)=>b[0]-a[0]).slice(0,rest).forEach(([,i]) => counts[i]++);
+  const seq = S.showList.flatMap((e,i) => Array(counts[i]).fill(e));
+  const out = {}; ds.forEach((x,k) => { out[x.id] = {}; DAYS.forEach((d,j) => out[x.id][d] = {...seq[k*7+j]}); });
+  return out;
+}
+const snapshot = () => Object.fromEntries(distSlots().map(x => [x.id, DAYS.reduce((o,d)=>(o[d]=ruleOn(x.s,d),o),{})]));
+function startDistribute() { const after = distribute(); if (!after) return alert('Show List is empty or has more entries than distributed cells.'); S.preview = {before:snapshot(), after}; render(); }
+function confirmDistribute() { distSlots().forEach(x => x.s.weekdays = S.preview.after[x.id]); S.preview = null; render(); }
+function cancelDistribute() { S.preview = null; render(); }
+
+function setCell(id, d, k) { const s = allSlots().find(x=>x.id===id).s; s.weekdays = s.weekdays || Object.fromEntries(DAYS.map(x=>[x,null])); s.weekdays[d] = fromKey(k); render(); }
+function setFixed(id, k) { allSlots().find(x=>x.id===id).s.rule = fromKey(k); render(); }
+function toggleMode(id) {
+  const s = allSlots().find(x=>x.id===id).s;
+  if (s.weekdays !== undefined) {
+    if (!confirm('Make this Slot fixed? It keeps Monday\'s rule; the other six days are discarded.')) return;
+    s.rule = s.weekdays ? s.weekdays.mon : null; delete s.weekdays;
+  } else { s.weekdays = Object.fromEntries(DAYS.map(d => [d, s.rule && {...s.rule}])); delete s.rule; }
+  render();
+}
+function moveEntry(i, dir) { const j = i+dir; if (j<0||j>=S.showList.length) return; [S.showList[i],S.showList[j]] = [S.showList[j],S.showList[i]]; render(); }
+function removeEntry(i) { S.showList.splice(i,1); render(); }
+function addEntry(k) { if (!k) return; const r = fromKey(k); if (listIdx(r) < 0) S.showList.push(r); render(); }
+
+// Derived facts the UI has to surface.
+function cellsPerWeek(r, src) { // src: optional {slotId:{day:rule}} override for distributed cells
+  let n = 0; allSlots().forEach(x => DAYS.forEach(d => { const rr = src && src[x.id] ? src[x.id][d] : ruleOn(x.s,d); if (key(rr)===key(r)) n++; })); return n;
+}
+const weeksLeft = (r, src) => { const c = cellsPerWeek(r, src); return c ? left(r)/c : Infinity; };
+function dayMinutes(d, bi=0) { return S.blocks[bi].slots.reduce((a,s)=>a+dur(ruleOn(s,d)),0); }
+function warnings() {
+  const w = [];
+  distSlots().forEach(x => { const e = DAYS.filter(d => !ruleOn(x.s,d)); if (e.length) w.push({lvl:'bad', t:`${x.name} is empty on ${e.map(d=>DAYN[d]).join(', ')}: it is skipped those days.`}); });
+  S.showList.forEach(e => { if (!cellsPerWeek(e)) w.push({lvl:'warn', t:`${label(e)} is in the Show List but not on the grid. Re-distribute or place it by hand.`}); });
+  const off = new Map(); distSlots().forEach(x => DAYS.forEach(d => { const r = ruleOn(x.s,d); if (r && !r.movie && listIdx(r) < 0) off.set(key(r), r); }));
+  off.forEach(r => w.push({lvl:'mute', t:`${label(r)} is on the grid but not in the Show List (hand edit). Re-distributing will remove it.`}));
+  DAYS.forEach(d => S.blocks.forEach((b,bi) => { const m = dayMinutes(d,bi); if (m > b.length*60) w.push({lvl:'bad', t:`${DAYN[d]}: Block ${bi+1} runs ${fmt(m)} of ${b.length}h; the last Slots will be dropped.`}); }));
+  return w;
+}
+const warnList = () => { const w = warnings(); return w.length ? `<ul class="warnings">${w.map(x=>`<li class="${x.lvl}">${x.lvl==='bad'?'⛔':x.lvl==='warn'?'⚠':'ℹ'} ${x.t}</li>`).join('')}</ul>` : '<p class="ok">✓ No problems.</p>'; };
+const ruleSelect = (cur, onchange, cls='', style='') => `<select class="${cls}" style="${style}" onchange="${onchange}">
+  <option value="" ${!cur?'selected':''}>— empty</option>
+  ${allRules().map(r => `<option value="${key(r)}" ${key(r)===key(cur)?'selected':''}>${label(r)}${listIdx(r)<0&&!r.movie?' (not in list)':''}</option>`).join('')}</select>`;
+const addSelect = () => `<select onchange="addEntry(this.value)"><option value="">+ add show or group…</option>
+  ${allRules().filter(r=>!r.movie && listIdx(r)<0).map(r=>`<option value="${key(r)}">${label(r)}</option>`).join('')}</select>`;
+const wl = (r, src) => { const x = weeksLeft(r, src); return x === Infinity ? '<span class="warn">not scheduled</span>' : x.toFixed(1)+' wk'; };
+const airings = b => Array.from({length:b.repeat}, (_,i) => hm(toMin(b.start) + i*b.length*60)).join(' · ');
+const header = sub => `<h1>Schedule</h1><div class="sub">${sub} · Broadcast Day starts ${S.blocks[0].start} UTC</div>`;
+
+// ---------- Variant A: week grid + Show List sidebar + modal preview ----------
+function gridTable(src, compare) { // src: snapshot override (for preview); compare: snapshot to highlight diffs against
+  return S.blocks.map((b,bi) => `<table>
+    <tr><th colspan="9">Block ${bi+1} · ${b.length}h × ${b.repeat} · Airings ${airings(b)} UTC</th></tr>
+    <tr><th style="width:120px">Slot</th>${DAYS.map(d=>`<th>${DAYN[d]}</th>`).join('')}</tr>
+    ${b.slots.map((s,si) => {
+      const id = s.id, dist = s.weekdays !== undefined;
+      const lab = `<td><b>Slot ${si+1}</b><br>${src ? `<span class="mute">${dist?'distributed':'fixed'}</span>` : `<button class="small" onclick="toggleMode(${id})">${dist?'distributed':'fixed'}</button>`}</td>`;
+      if (!dist) return `<tr>${lab}<td colspan="7" style="background:${color(s.rule)}">${src ? label(s.rule) : ruleSelect(s.rule, `setFixed(${id},this.value)`, 'cellsel', `background:${color(s.rule)}`)} <span class="mute">· every day</span></td></tr>`;
+      return `<tr>${lab}${DAYS.map(d => { const r = src ? src[id][d] : ruleOn(s,d); const ch = compare && key(compare[id][d]) !== key(r);
+        return `<td class="${r?'':'empty'} ${ch?'changed':''}" style="background:${color(r)}">${src ? `<span class="chip">${label(r)}</span>` : ruleSelect(r, `setCell(${id},'${d}',this.value)`, 'cellsel '+(r?'':'empty'), `background:${color(r)}`)}</td>`; }).join('')}</tr>`;
+    }).join('')}
+    ${src ? '' : `<tr><td class="mute">Fill</td>${DAYS.map(d => { const m = dayMinutes(d,bi); return `<td class="${m>b.length*60?'bad':'mute'}" style="font-size:12px">${fmt(m)} / ${b.length}h<br>Breaks ${m>b.length*60?'—':fmt(b.length*60-m)}</td>`; }).join('')}</tr>`}
+  </table>`).join('');
+}
+function showListPanel(withButtons=true) {
+  return `<table><tr><th></th><th>Show List</th><th>Eps left</th><th>Cells/wk</th><th>Weeks left</th>${withButtons?'<th></th>':''}</tr>
+  ${S.showList.map((e,i) => `<tr><td style="background:${PALETTE[i%PALETTE.length]};width:8px"></td><td>${label(e)}</td><td>${left(e)}</td><td>${cellsPerWeek(e)}</td><td>${wl(e)}</td>
+    ${withButtons?`<td style="white-space:nowrap"><button class="small" onclick="moveEntry(${i},-1)">↑</button><button class="small" onclick="moveEntry(${i},1)">↓</button><button class="small" onclick="removeEntry(${i})">×</button></td>`:''}</tr>`).join('')}
+  </table><div style="margin-top:8px">${addSelect()}</div>`;
+}
+function VariantA() {
+  return `${header('Variant A: week grid, Show List beside it, preview in a dialog')}
+  <div class="row">
+    <div class="grow card scroll">${gridTable()}</div>
+    <div class="side">
+      <div class="card">${showListPanel()}<div style="margin-top:12px"><button class="primary" onclick="startDistribute()">Distribute…</button></div></div>
+      <div class="card" style="margin-top:12px"><h2>Problems</h2>${warnList()}</div>
+    </div>
+  </div>
+  ${S.preview ? `<div class="modal-bg"><div class="modal"><h2>Replace every distributed cell?</h2>
+    <p class="mute">Changed cells are outlined. Fixed Slots are not touched. This overwrites hand edits.</p>
+    <div class="row"><div class="grow scroll"><h3>Now</h3>${gridTable(S.preview.before)}</div><div class="grow scroll"><h3>After distributing</h3>${gridTable(S.preview.after, S.preview.before)}</div></div>
+    <h3>Weeks left</h3><table><tr><th>Entry</th><th>Now</th><th>After</th></tr>${S.showList.map(e=>`<tr><td>${label(e)}</td><td>${wl(e)}</td><td>${wl(e,S.preview.after)}</td></tr>`).join('')}</table>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button onclick="cancelDistribute()">Cancel</button><button class="primary" onclick="confirmDistribute()">Replace ${countChanged()} cells</button></div>
+  </div></div>` : ''}`;
+}
+const countChanged = () => Object.keys(S.preview.after).reduce((n,id) => n + DAYS.filter(d => key(S.preview.after[id][d]) !== key(S.preview.before[id][d])).length, 0);
+
+// ---------- Variant B: one weekday at a time, Show List on its own tab ----------
+let dayTab = 'mon';
+function VariantB() {
+  const tabs = `<div class="tabs">${DAYS.map(d=>`<button class="${dayTab===d?'on':''}" onclick="dayTab='${d}';render()">${DAYN[d]}${distSlots().some(x=>!ruleOn(x.s,d))?' ⛔':''}</button>`).join('')}<button class="${dayTab==='list'?'on':''}" onclick="dayTab='list';render()">Show List & distribution</button></div>`;
+  if (dayTab === 'list') return `${header('Variant B: one weekday at a time, Show List on its own tab')}${tabs}
+    <div class="row"><div class="grow card">${showListPanel()}<div style="margin-top:12px">${S.preview?'':'<button class="primary" onclick="startDistribute()">Distribute…</button>'}</div></div>
+    <div class="side card"><h2>Problems</h2>${warnList()}</div></div>
+    ${S.preview ? `<div class="card" style="margin-top:12px"><h2>Proposed changes (${countChanged()} cells)</h2>
+      <table><tr><th>Day</th><th>Slot</th><th>Now</th><th>After</th></tr>
+      ${DAYS.flatMap(d => distSlots().filter(x => key(S.preview.before[x.id][d]) !== key(S.preview.after[x.id][d])).map(x =>
+        `<tr><td>${DAYN[d]}</td><td>${x.name}</td><td style="background:${color(S.preview.before[x.id][d])}">${label(S.preview.before[x.id][d])}</td><td style="background:${color(S.preview.after[x.id][d])}">${label(S.preview.after[x.id][d])}</td></tr>`)).join('') || '<tr><td colspan="4" class="mute">Nothing would change.</td></tr>'}
+      </table><div style="margin-top:12px;display:flex;gap:8px"><button onclick="cancelDistribute()">Cancel</button><button class="primary" onclick="confirmDistribute()">Apply</button></div></div>` : ''}`;
+  const d = dayTab;
+  return `${header('Variant B: one weekday at a time, Show List on its own tab')}${tabs}
+  <div class="row"><div class="grow">${S.blocks.map((b,bi) => {
+    const m = dayMinutes(d,bi), filled = b.slots.filter(s=>ruleOn(s,d)).length, brk = Math.max(0, b.length*60-m) / Math.max(1,filled);
+    let t = toMin(b.start) + bi*0;
+    return `<div class="card"><h2>${DAYN[d]} · Block ${bi+1} · ${b.length}h × ${b.repeat}</h2><div class="mute" style="margin-bottom:8px">Airings ${airings(b)} UTC · content ${fmt(m)}, Breaks ≈ ${fmt(brk)} each${m>b.length*60?' · <span class="bad">over by '+fmt(m-b.length*60)+'</span>':''}</div>
+    <table><tr><th style="width:70px">≈ Start</th><th style="width:70px">Slot</th><th>What airs</th><th style="width:150px">This Slot all week</th></tr>
+    ${b.slots.map((s,si) => { const r = ruleOn(s,d), dist = s.weekdays !== undefined, start = t; if (r) t += dur(r) + brk;
+      return `<tr><td class="mute">${r?hm(start):'—'}</td><td>Slot ${si+1}<br><button class="small" onclick="toggleMode(${s.id})">${dist?'distributed':'fixed'}</button></td>
+        <td class="${r?'':'empty'}" style="background:${color(r)}">${dist ? ruleSelect(r, `setCell(${s.id},'${d}',this.value)`, 'cellsel', `background:${color(r)}`) : ruleSelect(r, `setFixed(${s.id},this.value)`, 'cellsel', `background:${color(r)}`)+' <span class="mute">(every day)</span>'}${r&&r.show?` <span class="mute" style="font-size:12px">${dur(r)}m</span>`:''}</td>
+        <td><span class="dots">${DAYS.map(dd=>`<span title="${DAYN[dd]}: ${label(ruleOn(s,dd))}" style="background:${color(ruleOn(s,dd))};${dd===d?'outline:2px solid #111':''}" class="${ruleOn(s,dd)?'':'empty'}"></span>`).join('')}</span></td></tr>`; }).join('')}
+    </table></div>`; }).join('')}</div>
+  <div class="side card"><h2>Problems</h2>${warnList()}</div></div>`;
+}
+
+// ---------- Variant C: Show List first, each entry shows where it airs; compact heatmap below ----------
+let pop = null; // {id, d}
+function miniMap(r, src) { // 7 columns × distributed slots, own cells lit
+  return `<div style="display:grid;grid-template-columns:repeat(7,14px);gap:2px">${distSlots().flatMap(x => DAYS.map(d => {
+    const rr = src ? src[x.id][d] : ruleOn(x.s,d); const on = key(rr) === key(r);
+    return `<span title="${DAYN[d]} ${x.name}" style="width:14px;height:10px;border-radius:2px;background:${on?color(r):'#f0f0ec'};${on?'outline:1px solid rgba(0,0,0,.25)':''}"></span>`; })).join('')}</div>`;
+}
+function VariantC() {
+  const P = S.preview, wks = S.showList.map(e => weeksLeft(e, P && P.after)).filter(isFinite), max = Math.max(1, ...wks);
+  return `${header('Variant C: Show List first, the grid as a compact map')}
+  ${P ? `<div class="sticky"><b>Preview:</b> distributing changes ${countChanged()} cells and overwrites hand edits. <button onclick="cancelDistribute()">Discard</button><button class="primary" onclick="confirmDistribute()">Apply</button></div>` : ''}
+  <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">Show List</h2><div>${addSelect()} ${P?'':'<button class="primary" onclick="startDistribute()">Distribute</button>'}</div></div>
+    <table style="margin-top:8px"><tr><th></th><th>Entry</th><th>Eps left</th><th>Where it airs (rows = distributed Slots, Mon→Sun)</th><th style="width:220px">Weeks left</th><th></th></tr>
+    ${S.showList.map((e,i) => { const now = weeksLeft(e), aft = P ? weeksLeft(e, P.after) : null, shown = P ? aft : now;
+      return `<tr><td style="background:${PALETTE[i%PALETTE.length]};width:8px"></td><td><b>${label(e)}</b></td><td>${left(e)}</td>
+      <td>${P ? `<div style="display:flex;gap:12px;align-items:center"><div><div class="mute" style="font-size:11px">now</div>${miniMap(e)}</div>→<div><div class="mute" style="font-size:11px">after</div>${miniMap(e,P.after)}</div></div>` : miniMap(e)}</td>
+      <td>${isFinite(shown) ? `<div class="bar"><i style="width:${100*shown/max}%;background:${PALETTE[i%PALETTE.length]};filter:saturate(3)"></i></div><span style="font-size:12px">${P&&isFinite(now)?now.toFixed(1)+' → ':''}${shown.toFixed(1)} wk</span>` : '<span class="warn">not scheduled</span>'}</td>
+      <td style="white-space:nowrap"><button class="small" onclick="moveEntry(${i},-1)">↑</button><button class="small" onclick="moveEntry(${i},1)">↓</button><button class="small" onclick="removeEntry(${i})">×</button></td></tr>`; }).join('')}
+    </table></div>
+  <div class="row" style="margin-top:12px"><div class="grow card scroll"><h2>Week map</h2>
+    ${S.blocks.map((b,bi) => `<div class="mute" style="margin-bottom:6px">Block ${bi+1} · ${b.length}h × ${b.repeat} · ${airings(b)} UTC</div>
+    <div style="display:grid;grid-template-columns:110px repeat(7,minmax(44px,1fr));gap:3px;align-items:center">
+      <span></span>${DAYS.map(d=>`<b style="text-align:center;font-size:12px">${DAYN[d]}</b>`).join('')}
+      ${b.slots.map((s,si) => { const dist = s.weekdays !== undefined, src = P && dist ? P.after[s.id] : null;
+        return `<span>Slot ${si+1} <button class="small" onclick="toggleMode(${s.id})">${dist?'dist.':'fixed'}</button></span>` + DAYS.map(d => {
+          const r = src ? src[d] : ruleOn(s,d), ch = src && key(P.before[s.id][d]) !== key(r);
+          const ab = !r ? '∅' : r.movie ? '🎬' : label(r).replace('▣ ','').split(' ').map(w=>w[0]).join('');
+          return `<div class="sq ${r?'':'empty'} ${ch?'changed':''}" style="background:${color(r)};${dist?'':'opacity:.55'}" title="${DAYN[d]}: ${label(r)}" onclick="pop={id:${s.id},d:'${d}'};render()">${ab}</div>`; }).join(''); }).join('')}
+      <span class="mute" style="font-size:12px">Fill</span>${DAYS.map(d => { const m = dayMinutes(d,bi); return `<span style="text-align:center;font-size:11px" class="${m>b.length*60?'bad':'mute'}">${fmt(m)}</span>`; }).join('')}
+    </div>`).join('')}
+    ${pop ? (() => { const s = allSlots().find(x=>x.id===pop.id).s, dist = s.weekdays !== undefined;
+      return `<div class="card" style="margin-top:10px;background:#fafaf7"><b>${dist ? DAYN[pop.d]+' · ' : ''}Slot ${allSlots().find(x=>x.id===pop.id).si+1}</b> ${dist ? '' : '<span class="mute">(fixed: applies every day)</span>'}<br>
+        ${dist ? ruleSelect(ruleOn(s,pop.d), `setCell(${pop.id},'${pop.d}',this.value)`) : ruleSelect(s.rule, `setFixed(${pop.id},this.value)`)} <button class="small" onclick="pop=null;render()">close</button></div>`; })() : '<p class="mute" style="font-size:12px;margin-top:8px">Click a square to edit it. Faded rows are fixed Slots.</p>'}
+  </div><div class="side card"><h2>Problems</h2>${warnList()}</div></div>`;
+}
+
+// ---------- switcher ----------
+const VARIANTS = {A:['Week grid',VariantA], B:['Day by day',VariantB], C:['Show List first',VariantC]};
+const KEYS = Object.keys(VARIANTS);
+let variant = new URLSearchParams(location.search).get('variant') || 'A'; if (!VARIANTS[variant]) variant = 'A';
+function go(step) { variant = KEYS[(KEYS.indexOf(variant)+step+KEYS.length)%KEYS.length]; const u = new URL(location); u.searchParams.set('variant',variant); history.replaceState(null,'',u); render(); }
+document.getElementById('prev').onclick = () => go(-1); document.getElementById('next').onclick = () => go(1);
+addEventListener('keydown', e => { if (e.target.closest('input,textarea,select,[contenteditable]')) return; if (e.key==='ArrowLeft') go(-1); if (e.key==='ArrowRight') go(1); });
+function render() { document.getElementById('app').innerHTML = VARIANTS[variant][1](); document.getElementById('vlabel').textContent = `${variant} (${VARIANTS[variant][0]})`; }
+// Starting state: distributed once, then two hand edits so the warnings have something to show.
+distSlots().forEach((x,_,a) => x.s.weekdays = distribute()[x.id]);
+S.blocks[0].slots[4].weekdays.thu = {show:'Night Desk'};
+S.blocks[0].slots[5].weekdays.sat = null;
+render();
+</script>
+</body>
+</html>
