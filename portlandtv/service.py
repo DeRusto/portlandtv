@@ -119,24 +119,31 @@ class Service:
                 (found if prober.duration(path) else self.unplayable).append(path)
         prober.save()
         size = self._output_size()
-        program, picks, after, never_fits, problems, sequence, picked = day.build(
+        show_of = {p: name for name, eps in shows.items() for p in eps}
+
+        def describe(path):
+            return cards.describe(path, show_of, movies)
+
+        built = day.build(
             config.on_weekday(cfg, date.weekday()), shows, before, prober,
-            self._card_writer(shows, movies, date, size), filler, movies,
-            self._schedule_writer(shows, movies, date, cfg["day_start"], size), kept)
+            self._card_writer(describe, date, size), filler, movies,
+            self._schedule_writer(describe, date, cfg["day_start"], size), kept)
+        sequence = built.sequence
         d = date.isoformat()
         # atomic, so ffplayout reloads a whole playlist at its next clip boundary
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
-                         {"date": d, "program": program})
-        store.write_json(record_path, {"slots": picks, "problems": problems,
-                                       "state_before": before, "never_fits": never_fits,
-                                       "tail": sequence[-day.AHEAD:], "picked": picked})
-        store.write_json(self.paths.state, after)
+                         {"date": d, "program": built.program})
+        store.write_json(record_path, {"slots": built.block_items, "problems": built.problems,
+                                       "state_before": before, "never_fits": built.never_fits,
+                                       "tail": sequence[-day.AHEAD:],
+                                       "picked": built.slot_fills})
+        store.write_json(self.paths.state, built.state)
         # the previous day's last cards were placeholders until this day's items were known
         prev = store.read_json(self.paths.day(date - timedelta(days=1)), {})
         if "tail" in prev:
             tail = prev["tail"]
             prev_date = date - timedelta(days=1)
-            prev_card = self._card_writer(shows, movies, prev_date, size)
+            prev_card = self._card_writer(describe, prev_date, size)
             # end-(n) shows the day's items from len(tail) - n + 1; n reaches len(tail) + 1
             # when a Break airs before the day's first item (an empty first Block)
             for n in range(1, min(len(tail) + 1, day.AHEAD) + 1):
@@ -144,29 +151,27 @@ class Service:
                     t = len(tail) - n
                     prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
 
-    def _card_writer(self, shows, movies, date, size):
+    def _card_writer(self, describe, date, size):
         """card(name, item paths) -> path of that day's card, rendered once per name."""
-        show_of = {p: name for name, eps in shows.items() for p in eps}
         written = set()
 
         def card(name, paths):
             path = self.paths.card(date, name)
             if name not in written:
-                cards.render(path, [cards.describe(p, show_of, movies) for p in paths], size)
+                cards.render(path, [describe(p) for p in paths], size)
                 written.add(name)
             return path
         return card
 
-    def _schedule_writer(self, shows, movies, date, day_start, size):
+    def _schedule_writer(self, describe, date, day_start, size):
         """schedule(name, rows, upcoming, span) -> that Airing's schedule display frames."""
-        show_of = {p: name for name, eps in shows.items() for p in eps}
         start = datetime.combine(date, day_start, timezone.utc)
 
         def hhmm(seconds):
             return (start + timedelta(seconds=seconds)).strftime("%H:%M")
 
         def schedule(name, rows, upcoming, span):
-            entries = [{"time": hhmm(t), **cards.describe(p, show_of, movies),
+            entries = [{"time": hhmm(t), **describe(p),
                         "state": "aired" if i < upcoming else
                         "up_next" if i == upcoming else "later"}
                        for i, (t, p) in enumerate(rows)]

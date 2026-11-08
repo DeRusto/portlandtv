@@ -1,7 +1,20 @@
 """Day builder: fill each Slot once, lay out Breaks, write each Airing N times."""
 import copy
+from typing import NamedTuple
 
 from portlandtv import deck, slots
+
+
+class Day(NamedTuple):
+    """What build() returns."""
+    program: list  # the ffplayout program
+    block_items: list  # per Block, the items it airs
+    state: dict  # the state after the day
+    never_fits: list  # filler clips longer than every Break that day
+    problems: list  # dropped Slots, flagged
+    sequence: list  # the day's items in airing order
+    slot_fills: list  # per Block, per Slot [rule, path or None]; a later build's `kept`
+
 
 AHEAD = 3  # a card names the next item and the two after it
 MIN_STILL = 1.0  # a Break remainder shorter than this is dropped
@@ -33,9 +46,9 @@ def resolve_block(cfg, block, b, shows, movies, state, prober, problems, kept=()
     `kept`: an earlier build's [rule, path] per Slot; a Slot at the same position
     with the same rule keeps that path.
     """
-    items, lengths, picked = [], [], []
+    items, lengths, fills = [], [], []
     for s, rule in enumerate(block["slots"], 1):
-        picked.append([rule, None])
+        fills.append([rule, None])
         trial, path = copy.deepcopy(state), None
         if s <= len(kept) and kept[s - 1][0] == rule and kept[s - 1][1]:
             try:
@@ -52,15 +65,13 @@ def resolve_block(cfg, block, b, shows, movies, state, prober, problems, kept=()
             break
         items.append(path)
         lengths.append(length)
-        picked[-1][1] = path
+        fills[-1][1] = path
         state = trial
-    return items, lengths, state, picked
+    return items, lengths, state, fills
 
 
 def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None, kept=()):
-    """-> (ffplayout program, the items picked per Block, the advanced state,
-    the filler clips longer than every Break that day, the dropped-Slot problems,
-    the day's sequence of items, [[rule, path or None] per Slot] per Block).
+    """-> the Day built from `state`.
 
     card(name, upcoming item paths) -> PNG path. A name is shared by every Repeat
     only when its items stay inside the Airing; cards reaching past it are per
@@ -68,14 +79,14 @@ def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None, 
 
     schedule(name, [(start s, path) per Slot], upcoming Slot index, (start s, end s))
     -> that Airing's schedule display frame PNGs; times are seconds from day start.
-    `kept`: a previous build's last return value for this day ("rebuild today").
+    `kept`: a previous build's slot_fills for this day ("rebuild today").
     """
-    blocks, problems, picked = [], [], []
+    blocks, problems, slot_fills = [], [], []
     for b, block in enumerate(cfg["day_schedule"], 1):
-        items, lengths, state, p = resolve_block(
+        items, lengths, state, fills = resolve_block(
             cfg, block, b, shows, movies, state, prober, problems,
             kept[b - 1] if b <= len(kept) else ())
-        picked.append(p)
+        slot_fills.append(fills)
         brk = (block["length"] - sum(lengths)) / max(len(items), 1)
         blocks.append((block, items, lengths, brk))
     state = copy.deepcopy(state)  # never mutate the caller's state
@@ -123,4 +134,5 @@ def build(cfg, shows, state, prober, card, filler=(), movies=(), schedule=None, 
                 program.append({"in": 0, "out": rest, "duration": rest,
                                 "source": card(name, sequence[k:k + AHEAD])})
             t += block["length"]
-    return program, [b[1] for b in blocks], state, never_fits, problems, sequence, picked
+    return Day(program, [b[1] for b in blocks], state, never_fits, problems, sequence,
+               slot_fills)
