@@ -1,5 +1,6 @@
 """Scheduler, the service core: each tick generates the Broadcast Days that are due."""
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 
 from portlandtv import cards, config, day, library, store
@@ -18,30 +19,82 @@ class Service:
         self.state_path = os.path.join(self.data_dir, "state.json")
         self.error = None  # last generation error, for the UI
         self.unplayable = []  # files the last scan left out, for the UI
+        self._lock = threading.RLock()  # the tick thread and web requests both build
 
     def tick(self):
-        try:
-            cfg = config.load(self.config_path)
-            now = self.clock.now()
-            start = datetime.combine(now.date(), cfg["day_start"], timezone.utc)
-            if now < start:
-                start -= timedelta(days=1)
-            self._ensure(cfg, start.date())
-            if now >= start + timedelta(days=1) - LEAD:
-                self._ensure(cfg, start.date() + timedelta(days=1))
-            self.error = None
-        except Exception as e:  # recorded for the UI; the next tick retries
-            self.error = str(e)
+        with self._lock:
+            try:
+                cfg = config.load(self.config_path)
+                start = self._start(cfg)
+                self._ensure(cfg, start.date())
+                if self.clock.now() >= start + timedelta(days=1) - LEAD:
+                    self._ensure(cfg, start.date() + timedelta(days=1))
+                self._push_day_start(cfg)
+                self.error = None
+            except Exception as e:  # recorded for the UI; the next tick retries
+                self.error = str(e)
+
+    def on_save(self):
+        """After the YAML is saved: a generated day that hasn't started is regenerated
+        from its pre-generation state; today stays as it is."""
+        with self._lock:
+            try:
+                cfg = config.load(self.config_path)
+                self._unbuild(self._start(cfg).date() + timedelta(days=1))
+            except Exception as e:
+                self.error = str(e)
+                return
+            self.tick()
+
+    def rebuild_today(self):
+        """Re-run today's build with the saved YAML. Slots unchanged since today was
+        built keep today's item; new or changed ones are filled fresh."""
+        with self._lock:
+            try:
+                cfg = config.load(self.config_path)
+                today = self._start(cfg).date()
+                record = store.read_json(self._day_record_path(today), None)
+                if record:
+                    self._unbuild(today + timedelta(days=1))  # it follows on from today
+                    self._build(cfg, today, record["state_before"], record.get("picked", ()))
+            except Exception as e:
+                self.error = str(e)
+                return
+            self.tick()
+
+    def _start(self, cfg):
+        """When the current Broadcast Day started."""
+        now = self.clock.now()
+        start = datetime.combine(now.date(), cfg["day_start"], timezone.utc)
+        return start - timedelta(days=1) if now < start else start
+
+    def _push_day_start(self, cfg):
+        """Push the YAML's day_start to ffplayout when it differs from the last push."""
+        hhmm = cfg["day_start"].strftime("%H:%M")
+        path = os.path.join(self.data_dir, "ffplayout.json")
+        if store.read_json(path, {}).get("day_start") != hhmm:
+            self.ffplayout.set_day_start(hhmm)
+            store.write_json(path, {"day_start": hhmm})
+
+    def _unbuild(self, date):
+        """Forget the generated day `date`, putting the state back to before it."""
+        record_path = self._day_record_path(date)
+        record = store.read_json(record_path, None)
+        if record:
+            store.write_json(self.state_path, record["state_before"])
+            os.remove(record_path)
 
     def _day_record_path(self, date):
         return os.path.join(self.data_dir, "days", f"{date.isoformat()}.json")
 
     def _ensure(self, cfg, date):
         """Generate the Broadcast Day starting on `date` unless it already was."""
+        if not os.path.exists(self._day_record_path(date)):
+            self._build(cfg, date, store.read_json(self.state_path, {"shows": {}}))
+
+    def _build(self, cfg, date, before, kept=()):
+        """Generate the Broadcast Day starting on `date` from the state `before` it."""
         record_path = self._day_record_path(date)
-        if os.path.exists(record_path):
-            return
-        before = store.read_json(self.state_path, {"shows": {}})
         prober = library.CachedProber(self.prober, os.path.join(self.data_dir, "durations.json"))
         shows, self.unplayable = library.scan_shows(cfg["libraries"], prober)
         filler, movies = [], []
@@ -50,14 +103,16 @@ class Service:
             for path in paths:
                 (found if prober.duration(path) else self.unplayable).append(path)
         prober.save()
-        program, picks, after, never_fits, problems, sequence = day.build(
-            cfg, shows, before, prober, self._card_writer(shows, movies, date), filler, movies)
+        program, picks, after, never_fits, problems, sequence, picked = day.build(
+            cfg, shows, before, prober, self._card_writer(shows, movies, date), filler, movies,
+            kept)
         d = date.isoformat()
+        # atomic, so ffplayout reloads a whole playlist at its next clip boundary
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})
         store.write_json(record_path, {"slots": picks, "problems": problems,
                                        "state_before": before, "never_fits": never_fits,
-                                       "tail": sequence[-day.AHEAD:]})
+                                       "tail": sequence[-day.AHEAD:], "picked": picked})
         store.write_json(self.state_path, after)
         # the previous day's last cards were placeholders until this day's items were known
         prev = store.read_json(self._day_record_path(date - timedelta(days=1)), {})

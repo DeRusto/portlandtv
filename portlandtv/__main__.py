@@ -3,12 +3,14 @@
 python3 -m portlandtv CONFIG.yaml PLAYLIST_DIR [--port 8080]
 """
 import argparse
+import os
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timezone
 
+from portlandtv import ffplayout
 from portlandtv.service import Service
 from portlandtv.web import create_app
 
@@ -38,8 +40,10 @@ def main():
     p.add_argument("--host", default="0.0.0.0")  # home network, no login (spec #20)
     p.add_argument("--port", type=int, default=8080)
     args = p.parse_args()
-    # shortcut: no ffplayout client yet, #28 adds it
-    service = Service(args.config, args.playlist_dir, FfprobeProber(), Clock(), ffplayout=None)
+    # the login install.sh stores in /etc/portlandtv/ffplayout.env (the unit's EnvironmentFile)
+    client = ffplayout.Client(os.environ["FFPLAYOUT_URL"], os.environ["FFPLAYOUT_USER"],
+                              os.environ["FFPLAYOUT_PASSWORD"])
+    service = Service(args.config, args.playlist_dir, FfprobeProber(), Clock(), client)
 
     def loop():
         last = None

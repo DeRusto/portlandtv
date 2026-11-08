@@ -161,14 +161,16 @@ def create_app(service):
     def post():
         raw = _from_form(request.form, read_raw())
         action = request.form.get("action", "save")
-        if action != "save":
+        if action not in ("save", "rebuild"):
             _apply(raw, action)
             return render(raw)
         try:
             config.save(service.config_path, raw)
         except config.ConfigError as e:
             return render(raw, error=str(e), status=400)
-        # #28 hooks the scheduler's on-save regeneration in here.
+        service.on_save()
+        if action == "rebuild":
+            service.rebuild_today()
         return redirect("/", 303)
 
     return app
