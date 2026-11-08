@@ -44,6 +44,22 @@ class SlotRulesTest(unittest.TestCase):
         self.assertEqual(self.aired(s, "2026-11-10"),
                          ["Show C/c02.mkv", "Show B/b01.mkv", "Show B/b02.mkv"])
 
+    def test_show_group_resumes_by_key_when_the_aired_file_is_deleted(self):
+        s = self.station(day({"group": "Group X"}, show_groups={"Group X": ["Show B", "Show C"]}),
+                         files=["Show B/b.s01e01.mkv", "Show B/b.s01e02.mkv",
+                                "Show B/b.s01e03.mkv", "Show C/c.s01e01.mkv"])
+        days = [f"2026-11-{d:02}" for d in (9, 10, 11, 12)]
+        s.tick(DAY1)
+        os.remove(s.path("Show B/b.s01e01.mkv"))
+        s.tick(DAY2)
+        s.tick(utc(2026, 11, 11, 12, 0))
+        # the member's final episode is deleted after airing: the next member follows
+        os.remove(s.path("Show B/b.s01e03.mkv"))
+        s.tick(utc(2026, 11, 12, 12, 0))
+        self.assertEqual([self.aired(s, d) for d in days],
+                         [["Show B/b.s01e01.mkv"], ["Show B/b.s01e02.mkv"],
+                          ["Show B/b.s01e03.mkv"], ["Show C/c.s01e01.mkv"]])
+
     def test_a_show_keeps_one_position_across_slots_and_groups(self):
         s = self.station(day({"group": "Group X"}, {"show": "Show B"}, {"group": "Group X"},
                              show_groups={"Group X": ["Show B", "Show C"]}))
