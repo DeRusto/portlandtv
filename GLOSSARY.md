@@ -36,6 +36,14 @@ _Avoid_: Calendar day
 Short content that pads a Block so each Repeat starts at its fixed clock time.
 _Avoid_: Padding, bumper
 
+**Airing**:
+One play of a Block within a Broadcast Day; the first is the original, the rest are its Repeats.
+_Avoid_: Showing, run
+
+**Break**:
+The Filler that follows a Slot within an Airing, sized so the Airing ends exactly when the next begins.
+_Avoid_: Gap, intermission, commercial break
+
 **Generated Filler**:
 Filler the app renders itself from the schedule, such as a "next up" card or a schedule display, as a still or clip.
 _Avoid_: Bumper, interstitial
