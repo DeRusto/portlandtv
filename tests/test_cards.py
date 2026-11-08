@@ -58,6 +58,24 @@ class NextUpCardTest(unittest.TestCase):
         with Image.open(first) as im:
             self.assertEqual(im.size, (1280, 720))
 
+    def test_unreachable_ffplayout_uses_the_last_known_output_size(self):
+        s = self.station(block("24h", 1, "Show A", "Show B"))
+        s.ffplayout.size = (1280, 720)
+        s.tick(utc(2026, 11, 9, 12, 0))
+        s.ffplayout.size = OSError("ffplayout down")
+        s.tick(utc(2026, 11, 10, 12, 0))
+        self.assertIsNone(s.service.error)
+        with Image.open(breaks(s.playlist("2026-11-10")["program"])[0]) as im:
+            self.assertEqual(im.size, (1280, 720))
+
+    def test_never_reached_ffplayout_draws_cards_at_1080p(self):
+        s = self.station(block("24h", 1, "Show A", "Show B"))
+        s.ffplayout.size = OSError("ffplayout down")
+        s.tick(utc(2026, 11, 9, 12, 0))
+        self.assertIsNone(s.service.error)
+        with Image.open(breaks(s.playlist("2026-11-09")["program"])[0]) as im:
+            self.assertEqual(im.size, (1920, 1080))
+
     def test_cards_inside_the_airing_are_shared_by_repeats(self):
         s = self.station(block("12h", 2, "Show A", "Show B", "Show C", "Show D"))
         s.tick(utc(2026, 11, 9, 12, 0))

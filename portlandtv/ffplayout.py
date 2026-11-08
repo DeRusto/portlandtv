@@ -45,7 +45,7 @@ class Unconfigured:
     """Stands in when FFPLAYOUT_* aren't set: days still generate, the push fails visibly."""
 
     def output_size(self):
-        return 1920, 1080  # shortcut: assumed size, cards rescale once a real client is set
+        raise RuntimeError("ffplayout login not set")  # the service falls back to a known size
 
     def set_day_start(self, hhmm):
         raise RuntimeError("ffplayout login not set (FFPLAYOUT_URL/USER/PASSWORD): "

@@ -72,9 +72,22 @@ class Service:
         """Push the YAML's day_start to ffplayout when it differs from the last push."""
         hhmm = cfg["day_start"].strftime("%H:%M")
         path = os.path.join(self.data_dir, "ffplayout.json")
-        if store.read_json(path, {}).get("day_start") != hhmm:
+        pushed = store.read_json(path, {})
+        if pushed.get("day_start") != hhmm:
             self.ffplayout.set_day_start(hhmm)
-            store.write_json(path, {"day_start": hhmm})
+            store.write_json(path, {**pushed, "day_start": hhmm})
+
+    def _output_size(self):
+        """ffplayout's output size; the last one known (else 1080p) while it is unreachable."""
+        path = os.path.join(self.data_dir, "ffplayout.json")
+        known = store.read_json(path, {})
+        try:
+            size = list(self.ffplayout.output_size())
+        except Exception:  # cards are still drawn; ffplayout rescales them
+            return tuple(known.get("size", (1920, 1080)))
+        if known.get("size") != size:
+            store.write_json(path, {**known, "size": size})
+        return tuple(size)
 
     def _unbuild(self, date):
         """Forget the generated day `date`, putting the state back to before it."""
@@ -103,10 +116,11 @@ class Service:
             for path in paths:
                 (found if prober.duration(path) else self.unplayable).append(path)
         prober.save()
+        size = self._output_size()
         program, picks, after, never_fits, problems, sequence, picked = day.build(
             config.on_weekday(cfg, date.weekday()), shows, before, prober,
-            self._card_writer(shows, movies, date), filler, movies,
-            self._schedule_writer(shows, movies, date, cfg["day_start"]), kept)
+            self._card_writer(shows, movies, date, size), filler, movies,
+            self._schedule_writer(shows, movies, date, cfg["day_start"], size), kept)
         d = date.isoformat()
         # atomic, so ffplayout reloads a whole playlist at its next clip boundary
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
@@ -119,15 +133,14 @@ class Service:
         prev = store.read_json(self._day_record_path(date - timedelta(days=1)), {})
         if "tail" in prev:
             tail = prev["tail"]
-            prev_card = self._card_writer(shows, movies, date - timedelta(days=1))
+            prev_card = self._card_writer(shows, movies, date - timedelta(days=1), size)
             for n in range(1, len(tail) + 1):
                 t = len(tail) - n
                 prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
 
-    def _card_writer(self, shows, movies, date):
+    def _card_writer(self, shows, movies, date, size):
         """card(name, item paths) -> path of that day's card, rendered once per name."""
         show_of = {p: name for name, eps in shows.items() for p in eps}
-        size = self.ffplayout.output_size()
         written = set()
 
         def card(name, paths):
@@ -138,10 +151,9 @@ class Service:
             return path
         return card
 
-    def _schedule_writer(self, shows, movies, date, day_start):
+    def _schedule_writer(self, shows, movies, date, day_start, size):
         """schedule(name, rows, upcoming, span) -> that Airing's schedule display frames."""
         show_of = {p: name for name, eps in shows.items() for p in eps}
-        size = self.ffplayout.output_size()
         start = datetime.combine(date, day_start, timezone.utc)
 
         def hhmm(seconds):
