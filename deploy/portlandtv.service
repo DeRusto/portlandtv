@@ -1,0 +1,18 @@
+[Unit]
+Description=PortlandTV schedule generator and web UI
+After=network.target ffplayout.service
+Wants=ffplayout.service
+
+[Service]
+# ffpu is the service user the ffplayout 2.7.1 .deb creates (debian/postinst)
+User=ffpu
+Environment=TZ=UTC
+# FFPLAYOUT_URL, FFPLAYOUT_USER, FFPLAYOUT_PASSWORD, written by install.sh
+EnvironmentFile=/etc/portlandtv/ffplayout.env
+WorkingDirectory=/opt/portlandtv
+ExecStart=/usr/bin/python3 -m portlandtv /var/lib/portlandtv/portlandtv.yaml /var/lib/ffplayout/playlists
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
