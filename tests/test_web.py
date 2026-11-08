@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from tests.harness import Station
+from tests.harness import Station, utc
 from tests.web_harness import Browser
 
 FILES = ["Show A/Show A - S01E01.mkv", "Show A/Show A - S01E02.mkv",
@@ -134,6 +134,13 @@ class WebTest(unittest.TestCase):
         b.station.tick()
         b.get()
         self.assertIn("2026-11-09: Block 2 Slot 1: show &#39;Show C&#39; not found", b.html)
+        b.station.tick(utc(2026, 11, 10, 5, 30))  # tomorrow generated, today still airing
+        b.get()
+        self.assertIn("2026-11-09: Block 2 Slot 1", b.html)
+        self.assertIn("2026-11-10: Block 2 Slot 1", b.html)
+        b.station.tick(utc(2026, 11, 10, 12, 0))  # yesterday's record no longer counts
+        b.get()
+        self.assertNotIn("2026-11-09: Block 2 Slot 1", b.html)
 
     def test_problems_lists_unplayable_files_and_filler_that_never_fits(self):
         s = Station(CONFIG, FILES + ["Show A/Show A - S01E04.mkv"],

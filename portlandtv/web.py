@@ -5,7 +5,6 @@ Buttons post the whole form with an `action`. Every action except `save` and
 validate and write the YAML.
 """
 import collections
-import glob
 import os
 import statistics
 from datetime import datetime, timedelta
@@ -115,7 +114,6 @@ def _apply(raw, action, add=""):
 
 def create_app(service):
     app = Flask(__name__)
-    data_dir = os.path.dirname(os.path.abspath(service.config_path))
 
     def read_raw():
         with open(service.config_path) as f:
@@ -144,10 +142,9 @@ def create_app(service):
             out.append(f"ffplayout push problem: {service.push_error} (retrying)")
         out += [f"Library missing: {p}" for p in missing_libs]
         out += [f"Unplayable: {p}" for p in service.unplayable]
-        records = sorted(glob.glob(os.path.join(data_dir, "days", "*.json")))
-        if records:  # the latest per-day record's dropped/flagged Slots and filler
-            record = store.read_json(records[-1], {})
-            date = os.path.basename(records[-1])[:-5]
+        # today's and a generated tomorrow's dropped/flagged Slots and filler
+        for date in [service.today, service.today + timedelta(days=1)] if service.today else []:
+            record = store.read_json(service.paths.day(date), {})
             out += [f"{date}: {p}" for p in record.get("problems") or []]
             out += [f"Filler never fits: {p}" for p in record.get("never_fits") or []]
         return out
@@ -157,13 +154,13 @@ def create_app(service):
         libs = [lib for lib in raw["libraries"] if lib.get("path")]
         missing = [lib["path"] for lib in libs if not os.path.isdir(lib["path"])]
         found = [lib for lib in libs if lib["path"] not in missing]
-        prober = library.CachedProber(service.prober, os.path.join(data_dir, "durations.json"))
+        prober = library.CachedProber(service.prober, service.paths.durations)
         shows, _ = library.scan_shows(found, prober)
         return missing, prober, shows, library.scan_movies(found)
 
     def remaining(raw, shows):
         """Episodes left per Show List entry; a Show Group sums its members."""
-        state = store.read_json(os.path.join(data_dir, "state.json"), {"shows": {}})
+        state = store.read_json(service.paths.state, {"shows": {}})
         groups = raw.get("show_groups") or {}
 
         def left(name):  # episodes after the show's last-aired one

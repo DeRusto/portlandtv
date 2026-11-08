@@ -15,10 +15,10 @@ class Service:
         self.prober = prober
         self.clock = clock
         self.ffplayout = ffplayout
-        self.data_dir = os.path.dirname(os.path.abspath(config_path))
-        self.state_path = os.path.join(self.data_dir, "state.json")
+        self.paths = store.Paths(config_path)
         self.error = None  # last generation error, for the UI
         self.push_error = None  # last failed push to ffplayout, for the UI
+        self.today = None  # date the current Broadcast Day started on, as of the last tick
         self.unplayable = []  # files the last scan left out, for the UI
         self._lock = threading.RLock()  # the tick thread and web requests both build
 
@@ -27,6 +27,7 @@ class Service:
             try:
                 cfg = config.load(self.config_path)
                 start = self._start(cfg)
+                self.today = start.date()
                 self._ensure(cfg, start.date())
                 if self.clock.now() >= start + timedelta(days=1) - LEAD:
                     self._ensure(cfg, start.date() + timedelta(days=1))
@@ -59,7 +60,7 @@ class Service:
             try:
                 cfg = config.load(self.config_path)
                 today = self._start(cfg).date()
-                record = store.read_json(self._day_record_path(today), None)
+                record = store.read_json(self.paths.day(today), None)
                 if record:
                     self._unbuild(today + timedelta(days=1))  # it follows on from today
                     self._build(cfg, today, record["state_before"], record.get("picked", ()))
@@ -77,44 +78,39 @@ class Service:
     def _push_day_start(self, cfg):
         """Push the YAML's day_start to ffplayout when it differs from the last push."""
         hhmm = cfg["day_start"].strftime("%H:%M")
-        path = os.path.join(self.data_dir, "ffplayout.json")
-        pushed = store.read_json(path, {})
+        pushed = store.read_json(self.paths.ffplayout, {})
         if pushed.get("day_start") != hhmm:
             self.ffplayout.set_day_start(hhmm)
-            store.write_json(path, {**pushed, "day_start": hhmm})
+            store.write_json(self.paths.ffplayout, {**pushed, "day_start": hhmm})
 
     def _output_size(self):
         """ffplayout's output size; the last one known (else 1080p) while it is unreachable."""
-        path = os.path.join(self.data_dir, "ffplayout.json")
-        known = store.read_json(path, {})
+        known = store.read_json(self.paths.ffplayout, {})
         try:
             size = list(self.ffplayout.output_size())
         except Exception:  # cards are still drawn; ffplayout rescales them
             return tuple(known.get("size", (1920, 1080)))
         if known.get("size") != size:
-            store.write_json(path, {**known, "size": size})
+            store.write_json(self.paths.ffplayout, {**known, "size": size})
         return tuple(size)
 
     def _unbuild(self, date):
         """Forget the generated day `date`, putting the state back to before it."""
-        record_path = self._day_record_path(date)
+        record_path = self.paths.day(date)
         record = store.read_json(record_path, None)
         if record:
-            store.write_json(self.state_path, record["state_before"])
+            store.write_json(self.paths.state, record["state_before"])
             os.remove(record_path)
-
-    def _day_record_path(self, date):
-        return os.path.join(self.data_dir, "days", f"{date.isoformat()}.json")
 
     def _ensure(self, cfg, date):
         """Generate the Broadcast Day starting on `date` unless it already was."""
-        if not os.path.exists(self._day_record_path(date)):
-            self._build(cfg, date, store.read_json(self.state_path, {"shows": {}}))
+        if not os.path.exists(self.paths.day(date)):
+            self._build(cfg, date, store.read_json(self.paths.state, {"shows": {}}))
 
     def _build(self, cfg, date, before, kept=()):
         """Generate the Broadcast Day starting on `date` from the state `before` it."""
-        record_path = self._day_record_path(date)
-        prober = library.CachedProber(self.prober, os.path.join(self.data_dir, "durations.json"))
+        record_path = self.paths.day(date)
+        prober = library.CachedProber(self.prober, self.paths.durations)
         shows, self.unplayable = library.scan_shows(cfg["libraries"], prober)
         filler, movies = [], []
         for found, paths in ((filler, library.scan_filler(cfg["libraries"])),
@@ -134,9 +130,9 @@ class Service:
         store.write_json(record_path, {"slots": picks, "problems": problems,
                                        "state_before": before, "never_fits": never_fits,
                                        "tail": sequence[-day.AHEAD:], "picked": picked})
-        store.write_json(self.state_path, after)
+        store.write_json(self.paths.state, after)
         # the previous day's last cards were placeholders until this day's items were known
-        prev = store.read_json(self._day_record_path(date - timedelta(days=1)), {})
+        prev = store.read_json(self.paths.day(date - timedelta(days=1)), {})
         if "tail" in prev:
             tail = prev["tail"]
             prev_date = date - timedelta(days=1)
@@ -144,12 +140,9 @@ class Service:
             # end-(n) shows the day's items from len(tail) - n + 1; n reaches len(tail) + 1
             # when a Break airs before the day's first item (an empty first Block)
             for n in range(1, min(len(tail) + 1, day.AHEAD) + 1):
-                if os.path.exists(self._card_path(prev_date, day.end_card(n))):
+                if os.path.exists(self.paths.card(prev_date, day.end_card(n))):
                     t = len(tail) - n
                     prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
-
-    def _card_path(self, date, name):
-        return os.path.join(self.data_dir, "cards", date.isoformat(), name + ".png")
 
     def _card_writer(self, shows, movies, date, size):
         """card(name, item paths) -> path of that day's card, rendered once per name."""
@@ -157,7 +150,7 @@ class Service:
         written = set()
 
         def card(name, paths):
-            path = self._card_path(date, name)
+            path = self.paths.card(date, name)
             if name not in written:
                 cards.render(path, [cards.describe(p, show_of, movies) for p in paths], size)
                 written.add(name)
@@ -180,8 +173,7 @@ class Service:
             pages = [entries[i:i + day.FRAME_ROWS] for i in range(0, len(entries), day.FRAME_ROWS)]
             paths = []
             for n, page in enumerate(pages, 1):
-                path = os.path.join(self.data_dir, "cards", date.isoformat(),
-                                    f"sched-{name}-{n}.png")
+                path = self.paths.card(date, f"sched-{name}-{n}")
                 cards.render_schedule(path, {
                     "heading": "TODAY ON PORTLAND TV",
                     "range": f"{hhmm(span[0])}–{hhmm(span[1])} UTC",

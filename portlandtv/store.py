@@ -27,3 +27,20 @@ def read_json(path, default=None):
         return default
     with open(path) as f:
         return json.load(f)
+
+
+class Paths:
+    """Where the machine-owned files live, beside the YAML."""
+
+    def __init__(self, config_path):
+        self.root = os.path.dirname(os.path.abspath(config_path))
+        self.state = os.path.join(self.root, "state.json")
+        self.durations = os.path.join(self.root, "durations.json")
+        self.ffplayout = os.path.join(self.root, "ffplayout.json")  # last push, output size
+
+    def day(self, date):
+        """The day record of the Broadcast Day starting on `date`."""
+        return os.path.join(self.root, "days", f"{date.isoformat()}.json")
+
+    def card(self, date, name):
+        return os.path.join(self.root, "cards", date.isoformat(), name + ".png")
