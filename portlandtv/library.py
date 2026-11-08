@@ -33,3 +33,11 @@ def scan_shows(libraries):
     for eps in shows.values():
         eps.sort(key=_episode_key)
     return shows
+
+
+def scan_filler(libraries):
+    """Every playable file at any depth of every `filler` Library (no extras filtering)."""
+    return sorted(os.path.join(dirpath, f)
+                  for lib in libraries if lib.get("kind") == "filler"
+                  for dirpath, _, files in os.walk(lib["path"])
+                  for f in files if os.path.splitext(f)[1].lower() in VIDEO)
