@@ -3,14 +3,21 @@ import os
 
 
 class FakeProber:
-    """Durations from a table keyed by file name; unlisted files get `default`."""
+    """Durations from a table keyed by file name; unlisted files get `default`.
+    A table value of None means "no duration"; an exception instance is raised.
+    Every probed path is recorded in `.calls`."""
 
     def __init__(self, table=None, default=600.0):
         self.table = table or {}
         self.default = default
+        self.calls = []
 
     def duration(self, path):
-        return self.table.get(os.path.basename(path), self.default)
+        self.calls.append(path)
+        value = self.table.get(os.path.basename(path), self.default)
+        if isinstance(value, Exception):
+            raise value
+        return value
 
 
 class FakeClock:
