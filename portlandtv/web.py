@@ -28,6 +28,8 @@ def _rule_key(rule):
     """{show: X} -> 'show:X', the value of a Slot's rule dropdown."""
     if not rule:
         return ""
+    if not isinstance(rule, dict) or len(rule) != 1:
+        return f"invalid:{rule}"  # a hand-edited rule; the page still renders so it can be fixed
     (kind, name), = rule.items()
     return f"{kind}:{name}"
 

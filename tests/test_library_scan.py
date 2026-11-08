@@ -92,6 +92,28 @@ class LibraryScanTest(unittest.TestCase):
                          [s.path("Show/Season 1/Show - S01E01.mkv"),
                           s.path("Show/Season 1/Show - S01E02.mkv")])
 
+    def test_a_probe_that_fails_is_retried_on_the_next_build(self):
+        s = self.channel(["Show/Season 1/Show - S01E01.mkv"], slots=1,
+                         durations={"Show - S01E01.mkv": RuntimeError("ffprobe: timed out")})
+        s.tick(DAY1)
+        s.prober.table.clear()
+        s.tick(DAY2)
+        self.assertEqual(self.aired(s, "2026-11-10"), ["shows/Show/Season 1/Show - S01E01.mkv"])
+        self.assertEqual(s.service.unplayable, [])
+
+    def test_a_missing_movies_or_filler_library_is_a_generation_error(self):
+        for kind in ("movies", "filler"):
+            with self.subTest(kind):
+                s = self.channel(["Show/Season 1/Show - S01E01.mkv"], slots=1)
+                raw = yaml.safe_load(open(s.config_path))
+                gone = os.path.join(s.root, "gone")
+                raw["libraries"].append({"path": gone, "kind": kind})
+                with open(s.config_path, "w") as f:
+                    yaml.safe_dump(raw, f)
+                s.tick(DAY1)
+                self.assertIn(gone, s.service.error)
+                self.assertIsNone(s.playlist("2026-11-09"))
+
     def test_unplayable_filler_is_left_out_and_reported(self):
         s = self.channel(["Show/Season 1/Show - S01E01.mkv"], slots=1,
                          filler=["broken.mp4", ".hidden.mp4", "ok.mp4"],

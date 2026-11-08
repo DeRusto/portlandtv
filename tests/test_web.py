@@ -180,6 +180,13 @@ class WebTest(unittest.TestCase):
         self.assertNotIn("Generation error", b.html)
         self.assertIsNotNone(b.channel.playlist("2026-11-09"))
 
+    def test_a_hand_edited_rule_with_two_keys_still_renders(self):
+        b = self.open()
+        with open(b.channel.config_path, "w") as f:
+            f.write("day_schedule: [{length: 24h, repeat: 1,"
+                    " slots: [{rule: {show: Show A, movie: random}}]}]\n")
+        self.assertEqual(b.client.get("/").status_code, 200)
+
 
 WEEK = {"day_start": "06:00", "day_schedule": [
     {"length": "8h", "repeat": 3, "slots": [

@@ -12,6 +12,8 @@ def write_atomic(path, write):
     try:
         with os.fdopen(fd, "wb") as f:
             write(f)
+            f.flush()
+            os.fsync(f.fileno())  # so a power cut after the rename can't leave an empty file
         os.replace(tmp, path)
     except BaseException:
         os.unlink(tmp)

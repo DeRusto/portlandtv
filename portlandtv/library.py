@@ -47,7 +47,7 @@ class CachedProber:
         try:
             seconds = self.prober.duration(path) or None
         except Exception:
-            seconds = None
+            return None  # not cached: a failed probe may be transient (slow drive, timeout)
         self.cache[path] = {"stamp": stamp, "duration": seconds}
         return seconds
 
@@ -68,6 +68,13 @@ def _videos(folder):
                 yield os.path.join(dirpath, f)
 
 
+def _folder(lib):
+    """A Library's path; a missing one is a generation error, never silently empty."""
+    if not os.path.isdir(lib["path"]):
+        raise FileNotFoundError(f"Library missing: {lib['path']}")
+    return lib["path"]
+
+
 def scan_shows(libraries, prober):
     """-> ({show name: [episode paths in order]}, [unplayable paths]) from every `shows`
     Library. Same-named show folders merge; a duplicate (season, episode) is kept once."""
@@ -75,7 +82,7 @@ def scan_shows(libraries, prober):
     for lib in libraries:
         if lib.get("kind") != "shows":
             continue
-        for name in sorted(os.listdir(lib["path"])):
+        for name in sorted(os.listdir(_folder(lib))):
             folder = os.path.join(lib["path"], name)
             if name.startswith(".") or not os.path.isdir(folder):
                 continue
@@ -106,7 +113,7 @@ def scan_filler(libraries):
     for lib in libraries:
         if lib.get("kind") != "filler":
             continue
-        for dirpath, dirs, files in os.walk(lib["path"]):
+        for dirpath, dirs, files in os.walk(_folder(lib)):
             dirs[:] = [d for d in dirs if not d.startswith(".")]
             clips += [os.path.join(dirpath, f) for f in files
                       if not f.startswith(".") and os.path.splitext(f)[1].lower() in VIDEO]
@@ -116,4 +123,4 @@ def scan_filler(libraries):
 def scan_movies(libraries):
     """Every non-extra video file at any depth of every `movies` Library, one movie each."""
     return sorted(path for lib in libraries if lib.get("kind") == "movies"
-                  for path in _videos(lib["path"]))
+                  for path in _videos(_folder(lib)))
