@@ -124,6 +124,13 @@ class NextUpCardTest(unittest.TestCase):
             {"up_next": A2, "then": [B6, C2]},  # no "tomorrow" marker
         ])
 
+    def test_placeholder_of_an_empty_first_block_is_filled_in_too(self):
+        s = self.station({"length": "12h", "repeat": 1, "slots": []}, block("12h", 1, "Show A"))
+        s.tick(utc(2026, 11, 9, 12, 0))
+        s.tick(utc(2026, 11, 10, 5, 0))
+        self.assertEqual([card(c) for c in breaks(s.playlist("2026-11-09")["program"])],
+                         [{"up_next": A1, "then": [A2]}, {"up_next": A2, "then": []}])
+
     def test_placeholders_stay_if_the_next_day_fails_to_build(self):
         s = self.station(block("24h", 1, "Show A", "Show B"))
         s.tick(utc(2026, 11, 9, 12, 0))

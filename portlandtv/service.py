@@ -133,10 +133,17 @@ class Service:
         prev = store.read_json(self._day_record_path(date - timedelta(days=1)), {})
         if "tail" in prev:
             tail = prev["tail"]
-            prev_card = self._card_writer(shows, movies, date - timedelta(days=1), size)
-            for n in range(1, len(tail) + 1):
-                t = len(tail) - n
-                prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
+            prev_date = date - timedelta(days=1)
+            prev_card = self._card_writer(shows, movies, prev_date, size)
+            # end-(n) shows the day's items from len(tail) - n + 1; n reaches len(tail) + 1
+            # when a Break airs before the day's first item (an empty first Block)
+            for n in range(1, min(len(tail) + 1, day.AHEAD) + 1):
+                if os.path.exists(self._card_path(prev_date, day.end_card(n))):
+                    t = len(tail) - n
+                    prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
+
+    def _card_path(self, date, name):
+        return os.path.join(self.data_dir, "cards", date.isoformat(), name + ".png")
 
     def _card_writer(self, shows, movies, date, size):
         """card(name, item paths) -> path of that day's card, rendered once per name."""
@@ -144,7 +151,7 @@ class Service:
         written = set()
 
         def card(name, paths):
-            path = os.path.join(self.data_dir, "cards", date.isoformat(), name + ".png")
+            path = self._card_path(date, name)
             if name not in written:
                 cards.render(path, [cards.describe(p, show_of, movies) for p in paths], size)
                 written.add(name)
