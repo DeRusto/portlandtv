@@ -8,6 +8,11 @@
 <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
+{% macro rule_select(name, key, label) %}<select name="{{ name }}" aria-label="{{ label }}">
+  <option value=""{% if not key %} selected{% endif %}>— empty</option>
+  {% if key and key not in known %}<option value="{{ key }}" selected>{{ key }} (missing)</option>{% endif %}
+  {% for value, text in choices %}<option value="{{ value }}"{% if value == key %} selected{% endif %}>{{ text }}</option>{% endfor %}
+</select>{% endmacro %}
 <h1>PortlandTV</h1>
 <form method="post" action="/">
   <div class="sticky">
@@ -31,16 +36,19 @@
           <span class="{{ 'bad' if b.over else 'mute' }}">Content: typical {{ b.typical }}, max {{ b.max }}{% if b.over %}. The maximum exceeds the Block.{% endif %}</span>
           <button class="small" name="action" value="del-block:{{ i }}">Remove Block</button>
         </p>
-        <table>
-          <tr><th>Slot</th><th>Rule</th><th></th></tr>
-          {% for key in b.slots %}{% set j = loop.index0 %}
+        <div class="scroll"><table class="week">
+          <tr><th>Slot</th>{% for d in days %}<th>{{ d }}</th>{% endfor %}<th></th></tr>
+          {% for s in b.slots %}{% set j = loop.index0 %}
           <tr>
-            <td>{{ loop.index }}</td>
-            <td><select name="b{{ i }}.s{{ j }}.rule" aria-label="Block {{ i + 1 }} Slot {{ j + 1 }} rule">
-              <option value=""{% if not key %} selected{% endif %}>— choose a rule</option>
-              {% if key and key not in known %}<option value="{{ key }}" selected>{{ key }} (missing)</option>{% endif %}
-              {% for value, label in choices %}<option value="{{ value }}"{% if value == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select></td>
+            <td class="nowrap">{{ loop.index }}
+              <button class="small" name="action" value="mode-slot:{{ i }}:{{ j }}"
+                {% if not s.fixed %}data-confirm="Make this Slot fixed? It keeps Monday's rule; the other six days are discarded."{% endif %}
+                aria-label="Switch Slot {{ j + 1 }} to {{ 'distributed' if s.fixed else 'fixed' }}">{{ 'fixed' if s.fixed else 'distributed' }}</button></td>
+            {% if s.fixed %}
+            <td colspan="7" class="cell{% if not s.cells[0] %} empty{% endif %}" data-rule="{{ s.cells[0] }}">{{ rule_select("b%d.s%d.rule" % (i, j), s.cells[0], "Block %d Slot %d rule" % (i + 1, j + 1)) }} <span class="mute">· every day</span></td>
+            {% else %}{% for key in s.cells %}
+            <td class="cell{% if not key %} empty{% endif %}" data-rule="{{ key }}">{{ rule_select("b%d.s%d.%s" % (i, j, days[loop.index0] | lower), key, "Block %d Slot %d %s" % (i + 1, j + 1, days[loop.index0])) }}</td>
+            {% endfor %}{% endif %}
             <td class="nowrap">
               <button class="small" name="action" value="up-slot:{{ i }}:{{ j }}" aria-label="Move up">↑</button>
               <button class="small" name="action" value="down-slot:{{ i }}:{{ j }}" aria-label="Move down">↓</button>
@@ -48,8 +56,12 @@
             </td>
           </tr>
           {% endfor %}
-        </table>
-        <button class="small" name="action" value="add-slot:{{ i }}">Add Slot</button>
+          <tr class="fill"><td class="mute">Fill</td>
+            {% for f in b.fill %}<td class="{{ 'bad' if f.over else 'mute' }}">{{ f.content }} / {{ b.raw.length }}<br>Breaks {{ '—' if f.over else f.brk }}</td>{% endfor %}
+            <td></td></tr>
+        </table></div>
+        <button class="small" name="action" value="add-slot:{{ i }}">Add fixed Slot</button>
+        <button class="small" name="action" value="add-dslot:{{ i }}">Add distributed Slot</button>
       </section>
       {% endfor %}
       <button name="action" value="add-block">Add Block</button>

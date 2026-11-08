@@ -173,3 +173,78 @@ class WebTest(unittest.TestCase):
         b.get()
         self.assertNotIn("Generation error", b.html)
         self.assertIsNotNone(b.station.playlist("2026-11-09"))
+
+
+WEEK = {"day_start": "06:00", "day_schedule": [
+    {"length": "8h", "repeat": 3, "slots": [
+        {"rule": {"show": "Show A"}},
+        {"weekdays": {"mon": {"show": "Show B"}, "sun": {"show": "Show A"}}}]}]}
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+class WeekGridTest(unittest.TestCase):
+    open = WebTest.open
+
+    def cells(self, b, slot="b0.s1"):
+        f = b.fields()
+        return [f[f"{slot}.{d}"] for d in DAYS]
+
+    def test_fixed_slot_is_one_cell_and_distributed_slot_seven(self):
+        b = self.open(WEEK)
+        f = b.fields()
+        self.assertEqual(f["b0.s0.rule"], "show:Show A")
+        self.assertTrue(all(f"b0.s0.{d}" not in f for d in DAYS))
+        self.assertEqual(self.cells(b), ["show:Show B", "", "", "", "", "", "show:Show A"])
+        self.assertIn('colspan="7"', b.html)
+        for day in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"):
+            self.assertIn(f"<th>{day}</th>", b.html)
+
+    def test_editing_cells_saves_only_the_non_empty_weekdays(self):
+        b = self.open(WEEK)
+        b.submit(changes={"b0.s1.wed": "show:Show B", "b0.s1.sun": ""})
+        self.assertEqual(b.yaml()["day_schedule"][0]["slots"], [
+            {"rule": {"show": "Show A"}},
+            {"weekdays": {"mon": {"show": "Show B"}, "wed": {"show": "Show B"}}}])
+
+    def test_fixed_to_distributed_copies_the_rule_to_all_seven_days(self):
+        b = self.open(WEEK)
+        b.submit("mode-slot:0:0")
+        self.assertEqual(self.cells(b, "b0.s0"), ["show:Show A"] * 7)
+        b.submit()
+        self.assertEqual(b.yaml()["day_schedule"][0]["slots"][0],
+                         {"weekdays": {d: {"show": "Show A"} for d in DAYS}})
+
+    def test_distributed_to_fixed_keeps_monday_after_a_confirm(self):
+        b = self.open(WEEK)
+        self.assertIn('value="mode-slot:0:1"\n                data-confirm=', b.html)
+        b.submit("mode-slot:0:1")
+        self.assertEqual(b.fields()["b0.s1.rule"], "show:Show B")
+        b.submit()
+        self.assertEqual(b.yaml()["day_schedule"][0]["slots"][1], {"rule": {"show": "Show B"}})
+
+    def test_new_distributed_slot_starts_empty_with_hatched_cells(self):
+        b = self.open(WEEK)
+        self.assertEqual(b.html.count('class="cell empty"'), 5)
+        b.submit("add-dslot:0")
+        self.assertEqual(self.cells(b, "b0.s2"), [""] * 7)
+        self.assertEqual(b.html.count('class="cell empty"'), 12)
+        b.submit()
+        self.assertEqual(b.yaml()["day_schedule"][0]["slots"][2], {"weekdays": {}})
+
+    def test_fill_row_shows_content_and_breaks_per_weekday(self):
+        # Show A median 1300 s, Show B 1800 s; 8h Block
+        b = self.open(WEEK)
+        self.assertIn("0h51 / 8h<br>Breaks 7h08", b.html)  # Mon: A + B = 3100 s
+        self.assertIn("0h21 / 8h<br>Breaks 7h38", b.html)  # Tue: A only
+
+    def test_overrun_and_empty_cells_reach_the_problems_panel(self):
+        b = self.open({"day_schedule": [
+            {"length": "30m", "repeat": 48, "slots": [
+                {"rule": {"show": "Show A"}},
+                {"weekdays": {"mon": {"show": "Show B"}, "tue": {"show": "Show B"},
+                              "wed": {"show": "Show B"}, "thu": {"show": "Show B"},
+                              "fri": {"show": "Show B"}}}]}]})
+        self.assertIn('<td class="bad">0h51 / 30m<br>Breaks —</td>', b.html)
+        self.assertIn("Block 1 Slot 2 is empty on Sat, Sun: skipped those days", b.html)
+        self.assertIn("Block 1 content runs past its length on Mon, Tue, Wed, Thu, Fri",
+                      b.html)

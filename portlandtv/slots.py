@@ -9,6 +9,8 @@ class Missing(LookupError):
 
 def resolve(rule, shows, movies, groups, state):
     """-> the item's path; advances `state` in place."""
+    if not rule:
+        raise Missing("empty Weekday Rule, the Slot is skipped today")
     if "show" in rule:
         return _episode(shows, state, rule["show"])
     if "group" in rule:

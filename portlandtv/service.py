@@ -51,7 +51,7 @@ class Service:
                 (found if prober.duration(path) else self.unplayable).append(path)
         prober.save()
         program, picks, after, never_fits, problems, sequence = day.build(
-            cfg, shows, before, prober, self._card_writer(shows, movies, date), filler, movies)
+            config.on_weekday(cfg, date.weekday()), shows, before, prober, self._card_writer(shows, movies, date), filler, movies)
         d = date.isoformat()
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": program})

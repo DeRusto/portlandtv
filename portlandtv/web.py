@@ -28,6 +28,12 @@ def _rule_key(rule):
     return f"{kind}:{name}"
 
 
+def _form_rule(value):
+    """'show:X' -> {show: X}; '' -> None."""
+    kind, _, name = value.partition(":")
+    return {kind: name} if kind else None
+
+
 def _from_form(form, raw):
     """The posted form over `raw` (keys the form doesn't edit are kept)."""
     libs, i = [], 0
@@ -37,9 +43,13 @@ def _from_form(form, raw):
     blocks, i = [], 0
     while f"b{i}.length" in form:
         slots, j = [], 0
-        while f"b{i}.s{j}.rule" in form:
-            kind, _, name = form[f"b{i}.s{j}.rule"].partition(":")
-            slots.append({"rule": {kind: name}} if kind else {})
+        while (s := f"b{i}.s{j}") + ".rule" in form or s + ".mon" in form:
+            if s + ".mon" in form:  # distributed: only the non-empty days are stored
+                slots.append({"weekdays": {d: r for d in config.WEEKDAYS
+                                           if (r := _form_rule(form[f"{s}.{d}"]))}})
+            else:
+                r = _form_rule(form[s + ".rule"])
+                slots.append({"rule": r} if r else {})
             j += 1
         repeat = form[f"b{i}.repeat"].strip()
         blocks.append({"length": form[f"b{i}.length"].strip(),
@@ -60,6 +70,16 @@ def _apply(raw, action):
         del blocks[idx[0]]
     elif verb == "add-slot":
         blocks[idx[0]]["slots"].append({})
+    elif verb == "add-dslot":  # a new distributed Slot starts empty
+        blocks[idx[0]]["slots"].append({"weekdays": {}})
+    elif verb == "mode-slot":
+        slots, j = blocks[idx[0]]["slots"], idx[1]
+        if "weekdays" in slots[j]:  # -> fixed, keeping Monday's rule (the page confirms)
+            mon = (slots[j]["weekdays"] or {}).get("mon")
+            slots[j] = {"rule": mon} if mon else {}
+        else:  # -> distributed, the rule copied to all seven days
+            rule = slots[j].get("rule")
+            slots[j] = {"weekdays": {d: dict(rule) for d in config.WEEKDAYS} if rule else {}}
     elif verb == "del-slot":
         del blocks[idx[0]]["slots"][idx[1]]
     elif verb in ("up-slot", "down-slot"):
@@ -85,6 +105,8 @@ def create_app(service):
 
     def durations(rule, shows, groups, movies, prober):
         """Every length the rule can pick, in seconds."""
+        if not rule:
+            return []
         if "show" in rule:
             paths = shows.get(rule["show"], [])
         elif "group" in rule:
@@ -93,8 +115,8 @@ def create_app(service):
             paths = movies
         return [d for d in map(prober.duration, paths) if d]
 
-    def problems(missing_libs):
-        out = []
+    def problems(missing_libs, schedule):
+        out = list(schedule)
         if service.error:
             out.append(f"Generation error: {service.error} (retrying)")
         out += [f"Library missing: {p}" for p in missing_libs]
@@ -120,28 +142,42 @@ def create_app(service):
         movies = library.scan_movies(found)
         groups = raw.get("show_groups") or {}
         t = datetime.combine(datetime.min.date(), day_start)
-        blocks, total = [], 0
-        for b in raw["day_schedule"]:
+        blocks, total, schedule = [], 0, []
+        for n, b in enumerate(raw["day_schedule"], 1):
             try:
                 length = config.parse_length(b.get("length"))
                 repeat = int(b.get("repeat", 1))
             except (ValueError, TypeError):
                 length, repeat = None, 0
-            view = {"raw": b, "airs": [], "slots": [], "typical": 0, "max": 0}
+            view = {"raw": b, "airs": [], "slots": []}
+            typical, most = [0] * 7, [0] * 7  # content per weekday
             if length:
                 total += length * repeat
                 for _ in range(repeat):
                     view["airs"].append(t.strftime("%H:%M"))
                     t += timedelta(seconds=length)
-            for s in b.get("slots") or []:
-                rule = s.get("rule") or {}
-                lengths = durations(rule, shows, groups, movies, prober)
-                if lengths:
-                    view["typical"] += statistics.median(lengths)
-                    view["max"] += max(lengths)
-                view["slots"].append(_rule_key(rule))
-            view["over"] = bool(length) and view["max"] > length
-            view["typical"], view["max"] = _hm(view["typical"]), _hm(view["max"])
+            for m, s in enumerate(b.get("slots") or [], 1):
+                fixed = "weekdays" not in s
+                rules = ([s.get("rule") or {}] * 7 if fixed else
+                         [(s["weekdays"] or {}).get(d) or {} for d in config.WEEKDAYS])
+                for d, rule in enumerate(rules):
+                    lengths = durations(rule, shows, groups, movies, prober)
+                    if lengths:
+                        typical[d] += statistics.median(lengths)
+                        most[d] += max(lengths)
+                # cells[d]: that weekday's dropdown value, also the hook for colouring a cell
+                view["slots"].append({"fixed": fixed, "cells": [_rule_key(r) for r in rules]})
+                empty = [day.title() for day, r in zip(config.WEEKDAYS, rules) if not r]
+                if empty and not fixed:
+                    schedule.append(f"Block {n} Slot {m} is empty on {', '.join(empty)}:"
+                                    " skipped those days")
+            view["fill"] = [{"content": _hm(t), "brk": _hm(length - t) if length else "?",
+                             "over": bool(length) and t > length} for t in typical]
+            over = [day.title() for day, f in zip(config.WEEKDAYS, view["fill"]) if f["over"]]
+            if over:
+                schedule.append(f"Block {n} content runs past its length on {', '.join(over)}")
+            view["over"] = bool(length) and max(most) > length
+            view["typical"], view["max"] = _hm(max(typical)), _hm(max(most))
             blocks.append(view)
         prober.save()
         choices = ([(f"show:{n}", n) for n in shows]
@@ -151,7 +187,8 @@ def create_app(service):
             "index.html", raw=raw, blocks=blocks, error=error, kinds=config.KINDS,
             day_start=day_start.strftime("%H:%M"), left=_hm(config.DAY - total),
             choices=choices, known={k for k, _ in choices},
-            problems=problems(missing)), status
+            days=[d.title() for d in config.WEEKDAYS],
+            problems=problems(missing, schedule)), status
 
     @app.get("/")
     def index():

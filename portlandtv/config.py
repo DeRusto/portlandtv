@@ -9,6 +9,7 @@ from portlandtv import store
 DAY = 24 * 3600
 RULES = {"show", "group", "movie"}
 KINDS = ("shows", "movies", "filler")
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")  # date.weekday() order
 
 
 class ConfigError(ValueError):
@@ -47,6 +48,18 @@ def save(path, raw):
     store.write_atomic(path, lambda f: f.write(text.encode()))
 
 
+def _rule(rule):
+    if not isinstance(rule, dict) or len(rule) != 1 or next(iter(rule)) not in RULES:
+        raise ConfigError(f"unknown Slot rule {rule!r}")
+    return rule
+
+
+def on_weekday(cfg, weekday):
+    """The config with each Slot reduced to its rule on `weekday` (0 = Monday)."""
+    return {**cfg, "day_schedule": [{**b, "slots": [s[weekday] for s in b["slots"]]}
+                                    for b in cfg["day_schedule"]]}
+
+
 def parse(raw):
     """The YAML's raw dict -> the validated config, or raise ConfigError."""
     day_start = parse_day_start(raw.get("day_start", "06:00"))
@@ -58,10 +71,13 @@ def parse(raw):
     for b in raw.get("day_schedule") or []:
         slots = []
         for s in b.get("slots") or []:
-            rule = s.get("rule") or {}
-            if len(rule) != 1 or next(iter(rule)) not in RULES:
-                raise ConfigError(f"unknown Slot rule {rule!r}")
-            slots.append(rule)
+            if "weekdays" in s:  # distributed: a missing or empty day is an empty Weekday Rule
+                days = s["weekdays"] or {}
+                if set(days) - set(WEEKDAYS):
+                    raise ConfigError(f"bad weekdays {sorted(days)!r}, use mon .. sun")
+                slots.append([_rule(days[d]) if days.get(d) else {} for d in WEEKDAYS])
+            else:
+                slots.append([_rule(s.get("rule") or {})] * 7)
         repeat = b.get("repeat", 1)
         if not str(repeat).isdigit() or int(repeat) < 1:
             raise ConfigError(f"bad Block repeat {repeat!r}, use a whole number from 1")
