@@ -34,9 +34,17 @@ def parse_day_start(start):
         raise ConfigError(f"bad day_start {start!r}, use UTC HH:MM")
 
 
-def load(path):
+def read_raw(path):
+    """The YAML's raw dict, with the lists the editor works on always present."""
     with open(path) as f:
-        return parse(yaml.safe_load(f) or {})
+        raw = yaml.safe_load(f) or {}
+    return {**raw, "libraries": raw.get("libraries") or [],
+            "day_schedule": raw.get("day_schedule") or [],
+            "show_list": raw.get("show_list") or []}
+
+
+def load(path):
+    return parse(read_raw(path))
 
 
 def save(path, raw):
@@ -46,6 +54,53 @@ def save(path, raw):
         raw = {**raw, "day_start": parse_day_start(raw["day_start"]).strftime("%H:%M")}
     text = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
     store.write_atomic(path, lambda f: f.write(text.encode()))
+
+
+def block(length, repeat, slots):
+    """A raw Block from form text; `repeat` is stored as a number when it is one."""
+    repeat = repeat.strip()
+    return {"length": length.strip(), "repeat": int(repeat) if repeat.isdigit() else repeat,
+            "slots": slots}
+
+
+def new_block():
+    return {"length": "1h", "repeat": 1, "slots": [fixed_slot(None)]}
+
+
+def fixed_slot(rule):
+    """A raw fixed Slot airing `rule` every day; no rule is an empty Slot."""
+    return {"rule": rule} if rule else {}
+
+
+def distributed_slot(rules):
+    """A raw distributed Slot from its rules Mon..Sun; only non-empty days are stored."""
+    return {"weekdays": {d: dict(r) for d, r in zip(WEEKDAYS, rules) if r}}
+
+
+def is_fixed(slot):
+    return "weekdays" not in slot
+
+
+def slot_rules(slot):
+    """A raw Slot's 7 rules Mon..Sun, {} for an empty day (not validated)."""
+    if is_fixed(slot):
+        return [slot.get("rule") or {}] * 7
+    return [(slot["weekdays"] or {}).get(d) or {} for d in WEEKDAYS]
+
+
+def switch_mode(slot):
+    """Fixed -> distributed with the rule on all seven days; distributed -> fixed
+    keeping Monday's rule."""
+    rules = slot_rules(slot)
+    return distributed_slot(rules) if is_fixed(slot) else fixed_slot(rules[0])
+
+
+def length_repeat(raw_block):
+    """A raw Block's (length s, repeat), or raise ConfigError."""
+    repeat = raw_block.get("repeat", 1)
+    if not str(repeat).isdigit() or int(repeat) < 1:
+        raise ConfigError(f"bad Block repeat {repeat!r}, use a whole number from 1")
+    return parse_length(raw_block.get("length")), int(repeat)
 
 
 def _rule(rule):
@@ -75,19 +130,12 @@ def parse(raw):
     for b in raw.get("day_schedule") or []:
         slots = []
         for s in b.get("slots") or []:
-            if "weekdays" in s:  # distributed: a missing or empty day is an empty Weekday Rule
-                days = s["weekdays"] or {}
-                if set(days) - set(WEEKDAYS):
-                    raise ConfigError(f"bad weekdays {sorted(days)!r}, use mon .. sun")
-                slots.append([_rule(days[d]) if days.get(d) else {} for d in WEEKDAYS])
-            else:  # fixed: no rule is an empty rule every day
-                rule = s.get("rule")
-                slots.append([_rule(rule) if rule else {}] * 7)
-        repeat = b.get("repeat", 1)
-        if not str(repeat).isdigit() or int(repeat) < 1:
-            raise ConfigError(f"bad Block repeat {repeat!r}, use a whole number from 1")
-        blocks.append({"length": parse_length(b.get("length")),
-                       "repeat": int(repeat), "slots": slots})
+            if not is_fixed(s) and set(s["weekdays"] or {}) - set(WEEKDAYS):
+                raise ConfigError(f"bad weekdays {sorted(s['weekdays'])!r}, use mon .. sun")
+            # an empty day, or a fixed Slot with no rule, is an empty Weekday Rule
+            slots.append([_rule(r) if r else {} for r in slot_rules(s)])
+        length, repeat = length_repeat(b)
+        blocks.append({"length": length, "repeat": repeat, "slots": slots})
     total = sum(b["length"] * b["repeat"] for b in blocks)
     if total != DAY:
         raise ConfigError(f"Day Schedule totals {total / 3600:g} h, it must be exactly 24 h")

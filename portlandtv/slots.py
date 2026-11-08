@@ -18,6 +18,27 @@ def resolve(rule, shows, movies, groups, state):
     return _movie(movies, state)
 
 
+def _shows(rule, groups):
+    """The shows a {show} or {group} rule draws from."""
+    return [rule["show"]] if "show" in rule else groups.get(rule.get("group")) or []
+
+
+def candidates(rule, shows, movies, groups):
+    """Every item `rule` can pick; none for an empty rule."""
+    if not rule:
+        return []
+    if "movie" in rule:
+        return list(movies)
+    return [p for n in _shows(rule, groups) for p in shows.get(n, [])]
+
+
+def episodes_left(rule, shows, groups, state):
+    """Episodes after the last-aired one of a {show} or {group} rule (a group sums its
+    members)."""
+    return sum(len(eps) - min(_next(eps, state["shows"].get(n, {})), len(eps))
+               for n in _shows(rule, groups) for eps in [shows.get(n, [])])
+
+
 def _next(eps, last):
     """Index of the episode after `last` ({"path", "key"}); len(eps) once it has run out.
     If the last-aired file is gone, the first episode sorting after its key."""
@@ -77,8 +98,7 @@ def keep(rule, path, shows, movies, groups, state):
             movie_deck["left"].remove(path)
             movie_deck["aired"].append(path)
         return path
-    names = [rule["show"]] if "show" in rule else groups.get(rule["group"]) or []
-    name = next((n for n in names if path in shows.get(n, [])), None)
+    name = next((n for n in _shows(rule, groups) if path in shows.get(n, [])), None)
     if name is None:
         raise Missing(f"{path!r} no longer covered by the rule")
     if "group" in rule:

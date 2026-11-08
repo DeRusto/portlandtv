@@ -9,7 +9,6 @@ import os
 import statistics
 from datetime import datetime, timedelta
 
-import yaml
 from flask import Flask, redirect, render_template, request
 
 from portlandtv import config, distributor, library, slots, store
@@ -49,17 +48,13 @@ def _from_form(form, raw):
     while f"b{i}.length" in form:
         slots, j = [], 0
         while (s := f"b{i}.s{j}") + ".rule" in form or s + ".mon" in form:
-            if s + ".mon" in form:  # distributed: only the non-empty days are stored
-                slots.append({"weekdays": {d: r for d in config.WEEKDAYS
-                                           if (r := _form_rule(form[f"{s}.{d}"]))}})
+            if s + ".mon" in form:
+                slots.append(config.distributed_slot(
+                    [_form_rule(form[f"{s}.{d}"]) for d in config.WEEKDAYS]))
             else:
-                r = _form_rule(form[s + ".rule"])
-                slots.append({"rule": r} if r else {})
+                slots.append(config.fixed_slot(_form_rule(form[s + ".rule"])))
             j += 1
-        repeat = form[f"b{i}.repeat"].strip()
-        blocks.append({"length": form[f"b{i}.length"].strip(),
-                       "repeat": int(repeat) if repeat.isdigit() else repeat,
-                       "slots": slots})
+        blocks.append(config.block(form[f"b{i}.length"], form[f"b{i}.repeat"], slots))
         i += 1
     entries, k = [], 0
     while f"sl{k}" in form:
@@ -80,21 +75,16 @@ def _apply(raw, action, add=""):
     idx = [int(a) for a in args.split(":") if a]
     blocks, libs, entries = raw["day_schedule"], raw["libraries"], raw["show_list"]
     if verb == "add-block":
-        blocks.append({"length": "1h", "repeat": 1, "slots": [{}]})
+        blocks.append(config.new_block())
     elif verb == "del-block":
         del blocks[idx[0]]
     elif verb == "add-slot":
-        blocks[idx[0]]["slots"].append({})
+        blocks[idx[0]]["slots"].append(config.fixed_slot(None))
     elif verb == "add-dslot":  # a new distributed Slot starts empty
-        blocks[idx[0]]["slots"].append({"weekdays": {}})
-    elif verb == "mode-slot":
-        slots, j = blocks[idx[0]]["slots"], idx[1]
-        if "weekdays" in slots[j]:  # -> fixed, keeping Monday's rule (the page confirms)
-            mon = (slots[j]["weekdays"] or {}).get("mon")
-            slots[j] = {"rule": mon} if mon else {}
-        else:  # -> distributed, the rule copied to all seven days
-            rule = slots[j].get("rule")
-            slots[j] = {"weekdays": {d: dict(rule) for d in config.WEEKDAYS} if rule else {}}
+        blocks[idx[0]]["slots"].append(config.distributed_slot([]))
+    elif verb == "mode-slot":  # distributed -> fixed keeps only Monday: the page confirms
+        slots = blocks[idx[0]]["slots"]
+        slots[idx[1]] = config.switch_mode(slots[idx[1]])
     elif verb == "del-slot":
         del blocks[idx[0]]["slots"][idx[1]]
     elif verb in ("up-slot", "down-slot"):
@@ -114,25 +104,6 @@ def _apply(raw, action, add=""):
 
 def create_app(service):
     app = Flask(__name__)
-
-    def read_raw():
-        with open(service.config_path) as f:
-            raw = yaml.safe_load(f) or {}
-        return {**raw, "libraries": raw.get("libraries") or [],
-                "day_schedule": raw.get("day_schedule") or [],
-                "show_list": raw.get("show_list") or []}
-
-    def durations(rule, shows, groups, movies, prober):
-        """Every length the rule can pick, in seconds."""
-        if not rule:
-            return []
-        if "show" in rule:
-            paths = shows.get(rule["show"], [])
-        elif "group" in rule:
-            paths = [p for n in groups.get(rule["group"]) or [] for p in shows.get(n, [])]
-        else:
-            paths = movies
-        return [d for d in map(prober.duration, paths) if d]
 
     def problems(missing_libs, schedule):
         out = list(schedule)
@@ -161,19 +132,13 @@ def create_app(service):
     def remaining(raw, shows):
         """Episodes left per Show List entry; a Show Group sums its members."""
         state = store.read_json(service.paths.state, {"shows": {}})
-        groups = raw.get("show_groups") or {}
-
-        def left(name):  # episodes after the show's last-aired one
-            eps = shows.get(name, [])
-            return len(eps) - min(slots._next(eps, state["shows"].get(name, {})), len(eps))
-
-        return [left(e["show"]) if "show" in e else sum(map(left, groups.get(e.get("group")) or []))
+        return [slots.episodes_left(e, shows, raw.get("show_groups") or {}, state)
                 for e in raw["show_list"]]
 
     def distributed(raw):
         """[(Block n, Slot m, Slot)] of the distributed Slots, in Distribute's cell order."""
         return [(n, m, s) for n, b in enumerate(raw["day_schedule"], 1)
-                for m, s in enumerate(b.get("slots") or [], 1) if "weekdays" in s]
+                for m, s in enumerate(b.get("slots") or [], 1) if not config.is_fixed(s)]
 
     def plan(raw, shows):
         """New Weekday Rules per distributed Slot; raises distributor.Refused."""
@@ -202,9 +167,8 @@ def create_app(service):
         off_list = {}  # off-list shows and Show Groups on distributed cells, in order
         for n, b in enumerate(raw["day_schedule"], 1):
             try:
-                length = config.parse_length(b.get("length"))
-                repeat = int(b.get("repeat", 1))
-            except (ValueError, TypeError):
+                length, repeat = config.length_repeat(b)
+            except config.ConfigError:
                 length, repeat = None, 0
             view = {"raw": b, "airs": [], "slots": []}
             typical, most = [0] * 7, [0] * 7  # content per weekday
@@ -214,11 +178,10 @@ def create_app(service):
                     view["airs"].append(t.strftime("%H:%M"))
                     t += timedelta(seconds=length)
             for m, s in enumerate(b.get("slots") or [], 1):
-                fixed = "weekdays" not in s
-                rules = ([s.get("rule") or {}] * 7 if fixed else
-                         [(s["weekdays"] or {}).get(d) or {} for d in config.WEEKDAYS])
+                fixed, rules = config.is_fixed(s), config.slot_rules(s)
                 for d, rule in enumerate(rules):
-                    lengths = durations(rule, shows, groups, movies, prober)
+                    lengths = [x for x in map(prober.duration,
+                                              slots.candidates(rule, shows, movies, groups)) if x]
                     if lengths:
                         typical[d] += statistics.median(lengths)
                         most[d] += max(lengths)
@@ -269,7 +232,7 @@ def create_app(service):
             else:
                 rows, after = [], cells.copy()
                 for (n, m, s), rules in zip(distributed(raw), new):
-                    now = [_rule_key((s["weekdays"] or {}).get(d)) for d in config.WEEKDAYS]
+                    now = [_rule_key(r) for r in config.slot_rules(s)]
                     then = [_rule_key(r) for r in rules]
                     after.subtract(k for k in now if k)
                     after.update(then)
@@ -288,11 +251,11 @@ def create_app(service):
 
     @app.get("/")
     def index():
-        return render(read_raw())
+        return render(config.read_raw(service.config_path))
 
     @app.post("/")
     def post():
-        raw = _from_form(request.form, read_raw())
+        raw = _from_form(request.form, config.read_raw(service.config_path))
         action = request.form.get("action", "save")
         if action == "distribute":
             return render(raw, preview=True)
@@ -302,7 +265,7 @@ def create_app(service):
             except distributor.Refused as e:
                 return render(raw, refused=str(e))
             for (_, _, s), rules in zip(distributed(raw), new):
-                s["weekdays"] = {d: dict(r) for d, r in zip(config.WEEKDAYS, rules)}
+                s.update(config.distributed_slot(rules))
             action = "save"
         if action not in ("save", "rebuild"):
             _apply(raw, action, request.form.get("sl.add", ""))
