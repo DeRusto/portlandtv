@@ -94,6 +94,31 @@
       {% endfor %}
       <button name="action" value="add-block">Add Block</button>
 
+      <h2>Show List balance</h2>
+      <section class="card" id="balance">
+        {% if balance %}
+        <p class="mute">Each column is a Show List entry, as tall as its episodes left. Drag a show onto
+          another column to put them in one Show Group, or onto the strip below to take it out.
+          Auto-sort groups single shows so none outlasts the longest entry.</p>
+        <input type="hidden" name="bal.show"><input type="hidden" name="bal.from"><input type="hidden" name="bal.to">
+        <button hidden name="action" value="regroup" tabindex="-1">Regroup</button>
+        <div class="bars">
+          {% for e in balance %}
+          <div class="bar" data-entry="{{ loop.index0 }}">
+            <div class="stack">
+              {% for show, n in e.segments %}<div class="seg" draggable="true" data-show="{{ show }}"
+                style="height:{{ (100 * n / tallest) | round(2) }}%; background:{{ e.colour }}"
+                title="{{ show }}: {{ n }} episodes left">{{ show }} · {{ n }}</div>{% endfor %}
+            </div>
+            <div class="bar-label">{{ e.label }}<br><span class="mute">{{ e.left }} left</span></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="out" data-entry="">Drop here to take a show out of its Show Group</div>
+        <p><button class="small" name="action" value="auto-sort">Auto-sort</button></p>
+        {% else %}<p class="mute">Add shows to the Show List to see them here.</p>{% endif %}
+      </section>
+
       <h2>Libraries</h2>
       <table>
         <tr><th>Folder</th><th>Kind</th><th></th></tr>

@@ -50,7 +50,7 @@ Open `http://<laptop-ip>:8080` from any device on the home network. There is no 
 3. Add Blocks and give each a length and a repeat count. All Blocks' length × repeat must total exactly 24 h. The page keeps your edits as a draft and shows the time still to assign.
 4. Optionally make **Show Groups**: named lists of shows that share a Slot and play back to back. Renaming a group updates every Slot and Show List entry that uses it.
 5. Add Slots to each Block: next episode of a show or a Show Group, or a random movie. Make a Slot **distributed** to give it a different rule for each weekday.
-6. Optionally add shows and Show Groups to the **Show List** and use **Distribute…** to share them out across the week's distributed cells.
+6. Optionally add shows and Show Groups to the **Show List** and use **Distribute…** to share them out across the week's distributed cells. Each entry gets an equal share, taken in turn day by day. In **Show List balance**, each entry is a column as tall as its episodes left: drag shows between columns to group them, or press **Auto-sort** to group short shows so that none outlasts the longest entry.
 7. **Save.** Nothing, not even the Libraries, is saved until the schedule totals 24 h, so on a fresh install build it in one sitting.
 
 Until the schedule totals 24 h, the **Problems** panel shows a generation error and nothing is generated; the service never makes up a schedule.

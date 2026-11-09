@@ -28,6 +28,24 @@ document.addEventListener('change', e => {
   if (!e.target.matches('[data-check-all]')) return;
   for (const box of e.target.closest('fieldset').querySelectorAll('input[type=checkbox]')) box.checked = e.target.checked;
 });
+// Balance view: drag a show's segment onto another column, or onto the strip to ungroup it.
+document.addEventListener('dragstart', e => {
+  const seg = e.target.closest('.seg');
+  if (seg) e.dataTransfer.setData('text/plain', JSON.stringify([seg.dataset.show, seg.closest('.bar').dataset.entry]));
+});
+for (const type of ['dragover', 'dragleave', 'drop']) document.addEventListener(type, e => {
+  const zone = e.target.closest('.bar, .out');
+  if (!zone) return;
+  e.preventDefault();
+  zone.classList.toggle('over', type === 'dragover');
+  if (type !== 'drop') return;
+  const [show, from] = JSON.parse(e.dataTransfer.getData('text/plain'));
+  const form = zone.closest('form');
+  form.elements['bal.show'].value = show;
+  form.elements['bal.from'].value = from;
+  form.elements['bal.to'].value = zone.dataset.entry;
+  form.requestSubmit(form.querySelector('[value="regroup"]'));
+});
 // Browse… picks a Library folder on the laptop, as the service sees it.
 let browseTarget;
 async function browse(path) {

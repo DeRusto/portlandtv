@@ -6,6 +6,13 @@
 .slots { table-layout:fixed; min-width:52em; }
 .slots .slot-name { width:8.5em; } .slots .slot-moves { width:6em; }
 .slots td.cell select { min-width:0; }
+.bars { display:flex; gap:8px; overflow-x:auto; align-items:flex-end; padding-bottom:4px; }
+.bar { flex:0 0 7.5em; display:flex; flex-direction:column; border-radius:6px; padding:2px; }
+.bar .stack { height:220px; display:flex; flex-direction:column-reverse; }
+.seg { flex:none; min-height:3px; overflow:hidden; font-size:11px; line-height:1.2; padding:0 3px; border:1px solid #fff; border-radius:3px; cursor:grab; white-space:nowrap; text-overflow:ellipsis; }
+.bar-label { font-size:12px; padding-top:4px; overflow-wrap:anywhere; }
+.bar.over, .out.over { outline:2px dashed #2f6fdb; }
+.out { border:1px dashed var(--line); border-radius:6px; padding:8px; margin:8px 0; text-align:center; color:var(--mute); }
 .path { display:flex; gap:6px; } .path input { flex:1; min-width:0; }
 .pick { border:1px solid var(--line); border-radius:6px; max-height:14em; overflow:auto; margin:0 0 6px; }
 .pick label { display:block; }

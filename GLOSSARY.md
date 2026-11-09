@@ -33,7 +33,7 @@ An ordered list of shows that a Slot plays through one after another, as if they
 _Avoid_: Rotation, block
 
 **Show List**:
-The ordered list of shows and Show Groups that the app shares out across the weekdays, giving each a share of the week in proportion to its remaining episodes.
+The ordered list of shows and Show Groups that the app shares out across the weekdays, giving each an equal share of the distributed cells, taken in turn day by day. Grouping short shows so that each entry has about as many episodes left keeps them running out at about the same time.
 _Avoid_: Lineup, rotation
 
 **Broadcast Day**:

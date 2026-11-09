@@ -112,6 +112,49 @@ class ShowListTest(unittest.TestCase):
 
 
 
+class BalanceTest(unittest.TestCase):
+    open = ShowListTest.open
+    entries = ShowListTest.entries
+
+    def test_columns_are_entries_as_tall_as_their_episodes_left(self):
+        html = self.open().html.split('id="balance"')[1]
+        self.assertIn('data-show="A"\n                style="height:100.0%', html)
+        self.assertIn('data-show="B"\n                style="height:25.0%', html)
+        self.assertIn("C · 1", html)
+
+    def test_dragging_shows_together_and_apart(self):
+        b = self.open()
+        b.submit("regroup", {"bal.show": "C", "bal.from": "2", "bal.to": "1"})  # C onto B
+        self.assertEqual(self.entries(b), ["show:A", "group:Group 1"])
+        b.submit("regroup", {"bal.show": "A", "bal.from": "0", "bal.to": "1"})  # A onto the group
+        self.assertEqual(self.entries(b), ["group:Group 1"])
+        b.submit("regroup", {"bal.show": "B", "bal.from": "0", "bal.to": ""})  # B out
+        self.assertEqual(self.entries(b), ["group:Group 1", "show:B"])
+        b.submit()
+        self.assertEqual(b.yaml()["show_groups"], {"Group 1": ["C", "A"]})
+        # the last show out of a Show Group takes the group off the Show List
+        for show in ("C", "A"):
+            b.submit("regroup", {"bal.show": show, "bal.from": "0", "bal.to": ""})
+        self.assertEqual(self.entries(b), ["show:A", "show:C", "show:B"])
+        b.submit()
+        self.assertEqual(b.yaml()["show_groups"], {})
+
+    def test_auto_sort_packs_single_shows_up_to_the_longest_entry(self):
+        b = self.open({**CONFIG, "show_list": [{"show": s} for s in "ABCD"]})
+        b.submit("auto-sort")  # A 8 alone; D 3 + B 2 + C 1 = 6 fit under it
+        self.assertEqual(self.entries(b), ["show:A", "group:Group 1"])
+        b.submit()
+        self.assertEqual(b.yaml()["show_groups"], {"Group 1": ["D", "B", "C"]})
+
+    def test_auto_sort_tops_up_existing_show_groups_first(self):
+        b = self.open({**CONFIG, "show_groups": {"G": ["D"]},
+                       "show_list": [{"show": "A"}, {"show": "B"}, {"group": "G"}, {"show": "C"}]})
+        b.submit("auto-sort")  # G has D's 3; B 2 and C 1 fit in under A's 8
+        self.assertEqual(self.entries(b), ["show:A", "group:G"])
+        b.submit()
+        self.assertEqual(b.yaml()["show_groups"], {"G": ["D", "B", "C"]})
+
+
 class DistributeTest(unittest.TestCase):
     open = ShowListTest.open
 
@@ -130,10 +173,11 @@ class DistributeTest(unittest.TestCase):
         self.assertEqual(dialog.count('class="changed"'), 12)
         self.assertIn('value="replace">Replace 12 cells</button>', dialog)
         self.assertIn('value="cancel">Cancel</button>', dialog)
-        # weeks left: A 8 eps over 2 -> 9 cells, B 2 over 1 -> 3, C 1 over 0 -> 2
-        self.assertIn("<td>A</td><td>4.0</td><td>0.9</td>", dialog)
-        self.assertIn("<td>B</td><td>2.0</td><td>0.7</td>", dialog)
-        self.assertIn("<td>C</td><td>not scheduled</td><td>0.5</td>", dialog)
+        # weeks left, equal shares of 14 cells: A 8 eps over 2 -> 5 cells, B 2 over 1 -> 5,
+        # C 1 over 0 -> 4
+        self.assertIn("<td>A</td><td>4.0</td><td>1.6</td>", dialog)
+        self.assertIn("<td>B</td><td>2.0</td><td>0.4</td>", dialog)
+        self.assertIn("<td>C</td><td>not scheduled</td><td>0.2</td>", dialog)
         # nothing changes until the confirm
         self.assertEqual(b.yaml(), before)
         self.assertEqual(self.cells(b, "b0.s1")[:3], ["show:A", "show:A", "show:B"])
@@ -146,10 +190,12 @@ class DistributeTest(unittest.TestCase):
         a, bb, c = {"show": "A"}, {"show": "B"}, {"show": "C"}
         self.assertEqual(b.yaml()["day_schedule"][0]["slots"], [
             {"rule": {"show": "D"}},
-            {"weekdays": dict(zip(DAYS, [a] * 7))},
-            {"weekdays": dict(zip(DAYS, [a, a, bb, bb, bb, c, c]))}])
-        # A now has 9 cells a week (saving also builds today, so episodes left vary)
-        self.assertRegex(b.html, r"<td>A</td><td>\d+</td><td>9</td>")
+            # in turn, day by day: Mon Slot 2, Mon Slot 3, Tue Slot 2, ...
+            {"weekdays": dict(zip(DAYS, [a, c, bb, a, c, bb, a]))},
+            {"weekdays": dict(zip(DAYS, [bb, a, c, bb, a, c, bb]))}])
+        # A now has 5 cells a week, however many episodes it has left (saving also builds
+        # today, so episodes left vary)
+        self.assertRegex(b.html, r"<td>A</td><td>\d+</td><td>5</td>")
 
     def test_cancel_leaves_everything_as_it_was(self):
         b = self.open()
@@ -165,8 +211,9 @@ class DistributeTest(unittest.TestCase):
         b = self.open({**CONFIG, "show_list": [{"show": "C"}, {"show": "A"}, {"show": "B"}]})
         b.submit("distribute")
         b.submit("replace")
-        self.assertEqual(self.cells(b, "b0.s1"), ["show:C"] * 2 + ["show:A"] * 5)
-        self.assertEqual(self.cells(b, "b0.s2"), ["show:A"] * 4 + ["show:B"] * 3)
+        c, a, bb = "show:C", "show:A", "show:B"
+        self.assertEqual(self.cells(b, "b0.s1"), [c, bb, a, c, bb, a, c])
+        self.assertEqual(self.cells(b, "b0.s2"), [a, c, bb, a, c, bb, a])
 
     def test_refused_with_more_entries_than_cells(self):
         groups = {f"G{n}": ["D"] for n in range(5)}

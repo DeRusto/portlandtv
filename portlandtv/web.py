@@ -138,6 +138,72 @@ def _apply(raw, action, form):
         libs.append({"path": "", "kind": "shows"})
     elif verb == "del-lib":
         del libs[idx[0]]
+    elif verb == "regroup":  # a show dragged in the balance view
+        to = form.get("bal.to", "")
+        _regroup(raw, form["bal.show"], int(form["bal.from"]), int(to) if to else None)
+
+
+def _new_group(groups):
+    return next(f"Group {n}" for n in range(1, len(groups) + 2) if f"Group {n}" not in groups)
+
+
+def _regroup(raw, show, src, dst):
+    """Move `show` out of Show List entry `src` into entry `dst`, or into its own entry when
+    `dst` is None. Dropping it on a show makes a new Show Group of the two in its place; a
+    Show Group left with no shows leaves the Show List (Slots naming it are flagged)."""
+    entries, groups = raw["show_list"], raw["show_groups"]
+    target = None if dst is None else entries[dst]
+    source = entries[src]
+    if target is source or (target is None and "show" in source):
+        return
+    if target is None:  # before `source` may go, so it lands just after it
+        entries.insert(src + 1, {"show": show})
+    if "group" in source:
+        members = groups[source["group"]]
+        members.remove(show)
+        if not members:
+            del groups[source["group"]]
+            entries.remove(source)
+    else:
+        entries.remove(source)
+    if target is None:
+        pass
+    elif "group" in target:
+        if show not in groups[target["group"]]:
+            groups[target["group"]].append(show)
+    else:
+        name = _new_group(groups)
+        groups[name] = [target["show"], show]
+        entries[entries.index(target)] = {"group": name}
+
+
+def _auto_sort(raw, left):
+    """Pack the Show List's single shows (episodes left in `left`, per entry) into Show
+    Groups lasting no longer than its longest entry: largest first, each into the first
+    existing or new group it fits, else a new one. A new group of one stays a single show."""
+    entries, groups = raw["show_list"], raw["show_groups"]
+    target = max(left, default=0)
+    # [episodes, entry index, single shows' entry indexes]: Show List groups first
+    bins = [[left[i], i, []] for i, e in enumerate(entries) if "group" in e]
+    singles = sorted((i for i, e in enumerate(entries) if "show" in e), key=lambda i: -left[i])
+    for i in singles:
+        fit = next((b for b in bins if b[0] + left[i] <= target), None)
+        if fit:
+            fit[0] += left[i]
+            fit[2].append(i)
+        else:
+            bins.append([left[i], i, []])
+    gone = set()
+    for _, at, added in bins:
+        if not added:
+            continue
+        if "show" in entries[at]:  # a new group, in its largest show's place
+            name = _new_group(groups)
+            groups[name] = [entries[at]["show"]]
+            entries[at] = {"group": name}
+        groups[entries[at]["group"]] += [entries[i]["show"] for i in added]
+        gone.update(added)
+    entries[:] = [e for i, e in enumerate(entries) if i not in gone]
 
 
 def create_app(service):
@@ -188,10 +254,9 @@ def create_app(service):
         return [(n, m, s) for n, b in enumerate(raw["day_schedule"], 1)
                 for m, s in enumerate(b.get("slots") or [], 1) if not config.is_fixed(s)]
 
-    def plan(raw, shows):
+    def plan(raw):
         """New Weekday Rules per distributed Slot; raises distributor.Refused."""
-        return distributor.distribute(raw["show_list"], remaining(raw, shows),
-                                      len(distributed(raw)))
+        return distributor.distribute(raw["show_list"], len(distributed(raw)))
 
     def render(raw, error=None, status=200, preview=False, refused=None):
         try:
@@ -271,10 +336,19 @@ def create_app(service):
         show_list = [{"key": e, "label": names.get(e, e), "colour": colour[e], "left": n,
                       "cells": cells[e], "weeks": weeks(n, cells[e])}
                      for e, n in zip(entries, eps_left)]
+        # balance view: a column per entry, a segment per show, heights in episodes left
+        state = store.read_json(service.paths.state, {"shows": {}})
+        balance = []
+        for rule, e in zip(raw["show_list"], show_list):
+            members = (groups.get(rule["group"], []) if "group" in rule else [rule["show"]]) \
+                if isinstance(rule, dict) and rule.keys() & {"group", "show"} else []
+            balance.append({**e, "segments": [
+                (m, slots.episodes_left({"show": m}, shows, groups, state)) for m in members]})
+        tallest = max((e["left"] for e in show_list), default=0) or 1
         dialog = None
         if preview:
             try:
-                new = plan(raw, shows)
+                new = plan(raw)
             except distributor.Refused as e:
                 refused = str(e)
             else:
@@ -297,7 +371,7 @@ def create_app(service):
             groups=[{"name": n, "members": ms, "add": [s for s in shows if s not in ms]}
                     for n, ms in groups.items()],
             dialog=dialog, refused=refused, days=[d.title() for d in config.WEEKDAYS],
-            stream=stream_url(),
+            stream=stream_url(), balance=balance, tallest=tallest,
             problems=problems(missing, schedule)), status
 
     @app.get("/")
@@ -343,12 +417,15 @@ def create_app(service):
             return render(raw, preview=True)
         if action == "replace":  # the dialog's confirm: overwrite every distributed cell, save
             try:
-                new = plan(raw, scan(raw)[2])
+                new = plan(raw)
             except distributor.Refused as e:
                 return render(raw, refused=str(e))
             for (_, _, s), rules in zip(distributed(raw), new):
                 s.update(config.distributed_slot(rules))
             action = "save"
+        if action == "auto-sort":
+            _auto_sort(raw, remaining(raw, scan(raw)[2]))
+            return render(raw)
         if action not in ("save", "rebuild"):
             _apply(raw, action, request.form)
             return render(raw)
