@@ -119,8 +119,10 @@ def _apply(raw, action, form):
         _move(entries, idx[0], idx[0] - 1 if verb == "up-entry" else idx[0] + 1)
     elif verb == "del-entry":  # the grid is left as it is
         del entries[idx[0]]
-    elif verb == "add-entry" and (rule := _form_rule(form.get("sl.add", "")))             and rule not in entries:
-        entries.append(rule)
+    elif verb == "add-entry":  # every ticked show and Show Group
+        for rule in map(_form_rule, form.getlist("sl.add")):
+            if rule and rule not in entries:
+                entries.append(rule)
     elif verb == "add-group" and (name := form.get("g.new", "").strip()) and name not in groups:
         groups[name] = []
     elif verb == "del-group":  # Slots and entries naming it are flagged, not changed
@@ -310,6 +312,24 @@ def create_app(service):
                 e = bad
             return (f"<h1>PortlandTV</h1><p>The config file can't be shown in the editor: "
                     f"{escape(str(e))}</p><p>Fix {escape(service.config_path)} by hand.</p>")
+
+    @app.get("/folders")
+    def folders():
+        """A folder's subfolders for the Library picker, as the service user sees them.
+        A path that doesn't exist opens its nearest existing parent."""
+        path = os.path.abspath(request.args.get("path") or "/")
+        while not os.path.isdir(path):
+            path = os.path.dirname(path)
+        parent = os.path.dirname(path)
+        out = {"path": path, "parent": parent if parent != path else None, "dirs": []}
+        try:
+            names = sorted((e.name for e in os.scandir(path)
+                            if e.is_dir() and not e.name.startswith(".")), key=str.lower)
+        except OSError as e:  # e.g. the service user may not open it: what "Library missing" means
+            out["error"] = f"Can't open this folder: {e.strerror}"
+            return out
+        out["dirs"] = [{"name": n, "path": os.path.join(path, n)} for n in names]
+        return out
 
     @app.post("/")
     def post():

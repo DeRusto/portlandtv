@@ -61,11 +61,11 @@
         <p>
           <label>Length <input name="b{{ i }}.length" value="{{ b.raw.length }}" size="6" data-length></label>
           <label>Repeat <input name="b{{ i }}.repeat" value="{{ b.raw.repeat }}" size="3" inputmode="numeric" data-repeat></label>
-          <span class="{{ 'bad' if b.over else 'mute' }}">Content: typical {{ b.typical }}, max {{ b.max }}{% if b.over %}. The maximum exceeds the Block.{% endif %}</span>
           <button class="small" name="action" value="del-block:{{ i }}">Remove Block</button>
+          <span class="{{ 'bad' if b.over else 'mute' }}">Content: typical {{ b.typical }}, max {{ b.max }}{% if b.over %}. The maximum exceeds the Block.{% endif %}</span>
         </p>
-        <div class="scroll"><table class="week">
-          <tr><th>Slot</th>{% for d in days %}<th>{{ d }}</th>{% endfor %}<th></th></tr>
+        <div class="scroll"><table class="week slots">
+          <tr><th class="slot-name">Slot</th>{% for d in days %}<th>{{ d }}</th>{% endfor %}<th class="slot-moves"></th></tr>
           {% for s in b.slots %}{% set j = loop.index0 %}
           <tr>
             <td class="nowrap">{{ loop.index }}
@@ -99,7 +99,8 @@
         <tr><th>Folder</th><th>Kind</th><th></th></tr>
         {% for lib in raw.libraries %}{% set k = loop.index0 %}
         <tr>
-          <td><input name="lib{{ k }}.path" value="{{ lib.path }}" aria-label="Library {{ k + 1 }} folder" class="wide"></td>
+          <td><div class="path"><input name="lib{{ k }}.path" value="{{ lib.path }}" aria-label="Library {{ k + 1 }} folder">
+            <button type="button" class="small" data-browse="lib{{ k }}.path" aria-label="Browse for Library {{ k + 1 }} folder">Browse…</button></div></td>
           <td><select name="lib{{ k }}.kind" aria-label="Library {{ k + 1 }} kind">
             {% for kind in kinds %}<option value="{{ kind }}"{% if kind == lib.kind %} selected{% endif %}>{{ kind }}</option>{% endfor %}
           </select></td>
@@ -123,10 +124,13 @@
             <button class="small" name="action" value="del-entry:{{ k }}" aria-label="Remove {{ e.label }}">×</button></td></tr>
         {% endfor %}
       </table>
-      <p><select name="sl.add" aria-label="Show or Show Group to add">
-        <option value="">— add a show or Show Group</option>
-        {% for value, text in add %}<option value="{{ value }}">{{ text }}</option>{% endfor %}
-      </select> <button class="small" name="action" value="add-entry">Add</button></p>
+      {% if add %}
+      <fieldset class="pick"><legend>Shows and Show Groups not in the list</legend>
+        <label><input type="checkbox" data-check-all> <b>All</b></label>
+        {% for value, text in add %}<label><input type="checkbox" name="sl.add" value="{{ value }}"> {{ text }}</label>{% endfor %}
+      </fieldset>
+      <p><button class="small" name="action" value="add-entry">Add ticked</button></p>
+      {% endif %}
       <button name="action" value="distribute">Distribute…</button>
     </aside>
     <aside class="card" id="show-groups">
@@ -163,5 +167,12 @@
     </div>
   </div>
 </form>
+<dialog id="folders" aria-labelledby="folders-path">
+  <h3 id="folders-path"></h3>
+  <p class="bad"></p>
+  <ul></ul>
+  <p class="actions"><button type="button" data-close>Cancel</button>
+    <button type="button" class="primary" data-pick>Use this folder</button></p>
+</dialog>
 </body>
 </html>

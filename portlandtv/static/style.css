@@ -2,6 +2,17 @@
 * { box-sizing: border-box; }
 .scroll { overflow-x:auto; }
 .week td.cell select { width:100%; min-width:7em; }
+/* fixed column widths, so adding or switching a Slot never shifts the cells or its buttons */
+.slots { table-layout:fixed; min-width:52em; }
+.slots .slot-name { width:8.5em; } .slots .slot-moves { width:6em; }
+.slots td.cell select { min-width:0; }
+.path { display:flex; gap:6px; } .path input { flex:1; min-width:0; }
+.pick { border:1px solid var(--line); border-radius:6px; max-height:14em; overflow:auto; margin:0 0 6px; }
+.pick label { display:block; }
+dialog { border:1px solid var(--line); border-radius:8px; width:min(32em, 100%); }
+dialog ul { list-style:none; padding:0; max-height:50vh; overflow:auto; }
+dialog li button { border:0; width:100%; text-align:left; }
+dialog li button:hover { background:var(--bg); }
 .week td.empty { background:repeating-linear-gradient(135deg, #fbe3e4 0 6px, #fff 6px 12px); outline:1px solid var(--bad); }
 .week tr.fill td { font-size:12px; }
 body { margin:0; font:14px/1.4 system-ui, sans-serif; background:var(--bg); color:var(--ink); padding:16px; }

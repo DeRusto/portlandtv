@@ -40,7 +40,7 @@ class ShowGroupsTest(unittest.TestCase):
         self.assertEqual(self.members(b, 1), ["C", "A"])
         self.assertNotIn('value="C"', b.html.split('name="g1.add"')[1].split("</select>")[0])
         # a new group is offered straight away, in Slot rules and the Show List
-        self.assertIn('value="group:Cartoons"', b.html.split('name="sl.add"')[1])
+        self.assertIn('name="sl.add" value="group:Cartoons"', b.html)
         b.submit()
         self.assertEqual(b.yaml()["show_groups"], {"G": ["A", "B"], "Cartoons": ["C", "A"]})
 

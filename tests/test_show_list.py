@@ -73,15 +73,16 @@ class ShowListTest(unittest.TestCase):
         self.assertEqual(self.entries(b), ["show:B", "show:C", "show:A"])
         b.submit("del-entry:1")
         self.assertEqual(self.entries(b), ["show:B", "show:A"])
-        # the add dropdown offers only shows and Show Groups not yet in the list
-        self.assertIn('<option value="show:C">C</option>', b.html.split('name="sl.add"')[1])
-        self.assertNotIn('value="show:A"', b.html.split('name="sl.add"')[1].split("</select>")[0])
-        self.assertNotIn('value="movie:random"',
-                         b.html.split('name="sl.add"')[1].split("</select>")[0])
-        b.submit("add-entry", {"sl.add": "show:D"})
-        self.assertEqual(self.entries(b), ["show:B", "show:A", "show:D"])
+        # the add checklist offers only shows and Show Groups not yet in the list
+        offered = b.html.split('class="pick"')[1].split("</fieldset>")[0]
+        self.assertIn('name="sl.add" value="show:C"', offered)
+        self.assertNotIn('value="show:A"', offered)
+        self.assertNotIn('value="movie:random"', offered)
+        b.submit("add-entry", {"sl.add": ["show:D", "show:C"]})  # several ticked at once
+        self.assertEqual(self.entries(b), ["show:B", "show:A", "show:D", "show:C"])
         b.submit()
-        self.assertEqual(b.yaml()["show_list"], [{"show": "B"}, {"show": "A"}, {"show": "D"}])
+        self.assertEqual(b.yaml()["show_list"],
+                         [{"show": "B"}, {"show": "A"}, {"show": "D"}, {"show": "C"}])
 
     def test_removing_an_entry_leaves_the_grid_untouched(self):
         b = self.open()

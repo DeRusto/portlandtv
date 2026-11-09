@@ -56,6 +56,29 @@ class WebTest(unittest.TestCase):
         html = b.client.get("/", base_url="http://192.168.1.20:8080").get_data(as_text=True)
         self.assertIn('href="http://192.168.1.20:8787/public/1/live/stream.m3u8"', html)
 
+    def test_folder_picker_lists_subfolders_and_opens_the_nearest_real_folder(self):
+        b = self.open()
+        root = b.channel.root
+        f = b.client.get("/folders", query_string={"path": root}).get_json()
+        self.assertEqual(f["path"], root)
+        self.assertEqual(f["parent"], os.path.dirname(root))
+        self.assertIn({"name": "shows", "path": os.path.join(root, "shows")}, f["dirs"])
+        typed = os.path.join(root, "shows", "not yet made", "deeper")
+        self.assertEqual(b.client.get("/folders", query_string={"path": typed}).get_json()["path"],
+                         os.path.join(root, "shows"))
+        self.assertEqual([d["name"] for d in b.client.get(
+            "/folders", query_string={"path": os.path.join(root, "shows")}).get_json()["dirs"]],
+            ["Show A", "Show B"])
+
+    def test_a_file_ffprobe_fails_on_is_not_measured_again_and_again(self):
+        s = Channel(CONFIG, FILES, {**DURATIONS, "b.s01e01.mp4": OSError("corrupt")})
+        self.addCleanup(s.close)
+        b = Browser(s)
+        b.get()
+        b.get()
+        self.assertEqual(s.prober.calls.count(s.path("Show B/b.s01e01.mp4")), 1)
+        self.assertNotIn("Measuring video lengths", b.html)
+
     def test_the_page_opens_while_new_files_are_still_measured(self):
         s = Channel(CONFIG, FILES, DURATIONS)
         self.addCleanup(s.close)

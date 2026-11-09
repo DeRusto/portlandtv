@@ -161,6 +161,8 @@ class Measurer:
         self._wake = None
         self.idle = threading.Event()  # set while nothing is asked for or being measured
         self.idle.set()
+        # shortcut: a file ffprobe failed on is not retried until a restart, even if replaced
+        self._failed = set()
 
     def start(self):
         self._wake = threading.Event()
@@ -197,9 +199,12 @@ class Measurer:
         scan_shows(libs, peek)
         for path in scan_filler(libs) + scan_movies(libs):
             peek.duration(path)
-        self.left = len(peek.pending)
+        todo = [p for p in peek.pending if p not in self._failed]
+        self.left = len(todo)
         prober = CachedProber(self.prober, self.cache_path)
-        for path in peek.pending:
+        for path in todo:
             prober.duration(path)
+            if path not in prober.cache:  # the probe failed: not cached, so it would never end
+                self._failed.add(path)
             self.left -= 1
         prober.save()

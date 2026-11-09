@@ -15,7 +15,10 @@ class _Form(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
-        if tag == "input" and "name" in a:
+        if tag == "input" and a.get("type") == "checkbox":
+            if "name" in a and "checked" in a:
+                self.fields.setdefault(a["name"], []).append(a.get("value", "on"))
+        elif tag == "input" and "name" in a:
             self.fields[a["name"]] = a.get("value", "")
         elif tag == "select":
             self._select, self._first = a["name"], True
