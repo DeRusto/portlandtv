@@ -118,7 +118,10 @@ def call(method, path, body=None, token=None):
         req.add_header("Authorization", "Bearer " + token)
     with urllib.request.urlopen(req) as r:
         text = r.read()
-    return json.loads(text) if text else None
+    try:
+        return json.loads(text)
+    except ValueError:  # writes answer with plain text (e.g. "Update Success"), or nothing
+        return text.decode()
 
 token = call("POST", "/auth/login", {"username": os.environ["FFPLAYOUT_USER"],
                                      "password": os.environ["FFPLAYOUT_PASSWORD"]})["access"]
