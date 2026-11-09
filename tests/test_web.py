@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 import unittest
 
 import yaml
@@ -14,6 +16,15 @@ CONFIG = {"day_start": "06:00", "day_schedule": [
     {"length": "8h", "repeat": 2, "slots": [{"rule": {"show": "Show A"}}]},
     {"length": "4h", "repeat": 2, "slots": [{"rule": {"show": "Show B"}}]},
 ]}
+
+
+def wait_for(check, seconds=5):
+    deadline = time.monotonic() + seconds
+    while not check():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.01)
+    return True
 
 
 class WebTest(unittest.TestCase):
@@ -33,10 +44,35 @@ class WebTest(unittest.TestCase):
 
     def test_page_assets_are_served_locally(self):
         b = self.open()
-        self.assertNotRegex(b.html, r'(src|href)="(https?:)?//')
+        self.assertNotRegex(b.html, r'(src|<link[^>]*href)="(https?:)?//')  # the stream link is not an asset
         for asset in ("/static/style.css", "/static/app.js"):
             self.assertIn(asset, b.html)
             self.assertEqual(b.client.get(asset).status_code, 200)
+
+    def test_page_links_the_stream_on_the_host_it_was_opened_on(self):
+        s = Channel(CONFIG, FILES, DURATIONS)
+        self.addCleanup(s.close)
+        b = Browser(s)
+        html = b.client.get("/", base_url="http://192.168.1.20:8080").get_data(as_text=True)
+        self.assertIn('href="http://192.168.1.20:8787/public/1/live/stream.m3u8"', html)
+
+    def test_the_page_opens_while_new_files_are_still_measured(self):
+        s = Channel(CONFIG, FILES, DURATIONS)
+        self.addCleanup(s.close)
+        release, measure = threading.Event(), s.prober.duration
+        s.prober.duration = lambda path: release.wait(5) and measure(path)
+        self.addCleanup(release.set)
+        s.service.measurer.start()
+        b = Browser(s)
+        b.get()  # returns although nothing is measured yet
+        self.assertTrue(wait_for(lambda: s.service.measurer.left == 4))
+        self.assertIn("Measuring video lengths: 4 files left", b.get())
+        self.assertNotIn("typical 0h21", b.html)
+        release.set()
+        self.assertTrue(wait_for(lambda: s.service.measurer.left == 0))
+        self.assertTrue(wait_for(lambda: "typical 0h21, max 0h25" in b.get()))
+        self.assertNotIn("Measuring video lengths", b.html)
+        self.assertTrue(s.service.measurer.idle.wait(5))  # no write into the removed temp dir
 
     def test_save_writes_the_edited_schedule(self):
         b = self.open()

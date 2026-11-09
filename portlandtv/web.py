@@ -148,6 +148,9 @@ def create_app(service):
         if service.push_error:
             out.append(f"ffplayout push problem: {service.push_error} (retrying)")
         out += [f"Library missing: {p}" for p in missing_libs]
+        if service.measurer.left:
+            out.append(f"Measuring video lengths: {service.measurer.left} files left."
+                       " Block lengths are partial until it finishes; reload to update.")
         out += [f"Unplayable: {p}" for p in service.unplayable]
         # today's and a generated tomorrow's dropped/flagged Slots and filler
         for date in [service.today, service.today + timedelta(days=1)] if service.today else []:
@@ -156,12 +159,19 @@ def create_app(service):
             out += [f"Filler never fits: {p}" for p in record.get("never_fits") or []]
         return out
 
+    def stream_url():
+        """ffplayout's HLS stream on the host this page was opened on (install.sh's port)."""
+        host = urlparse(request.host_url).hostname
+        return f"http://{f'[{host}]' if ':' in host else host}:8787/public/1/live/stream.m3u8"
+
     def scan(raw):
         """-> (missing Library folders, prober, shows, movies) for the draft's Libraries."""
         libs = [lib for lib in raw["libraries"] if lib.get("path")]
         missing = [lib["path"] for lib in libs if not os.path.isdir(lib["path"])]
         found = [lib for lib in libs if lib["path"] not in missing]
-        prober = library.CachedProber(service.prober, service.paths.durations)
+        service.measurer.want(found)
+        # lengths measured so far only: a page load never waits on ffprobe
+        prober = library.CachedProber(service.prober, service.paths.durations, measure=False)
         shows, _ = library.scan_shows(found, prober)
         return missing, prober, shows, library.scan_movies(found)
 
@@ -243,7 +253,6 @@ def create_app(service):
             view["over"] = bool(length) and max(most) > length
             view["typical"], view["max"] = _hm(max(typical)), _hm(max(most))
             blocks.append(view)
-        prober.save()
         schedule += [f"Show List: {names.get(e, e)} has no cells on the grid"
                      for e in entries if not cells[e]]
         schedule += [f"{names.get(k, k)} is on the grid but not in the Show List"
@@ -286,6 +295,7 @@ def create_app(service):
             groups=[{"name": n, "members": ms, "add": [s for s in shows if s not in ms]}
                     for n, ms in groups.items()],
             dialog=dialog, refused=refused, days=[d.title() for d in config.WEEKDAYS],
+            stream=stream_url(),
             problems=problems(missing, schedule)), status
 
     @app.get("/")

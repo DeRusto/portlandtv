@@ -13,6 +13,7 @@ class Service:
         self.config_path = config_path
         self.playlist_dir = playlist_dir
         self.prober = prober
+        self.measurer = library.Measurer(prober, store.Paths(config_path).durations)
         self.clock = clock
         self.ffplayout = ffplayout
         self.paths = store.Paths(config_path)

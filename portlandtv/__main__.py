@@ -56,6 +56,7 @@ def main():
                 last = service.error, service.push_error
             time.sleep(TICK)
 
+    service.measurer.start()
     threading.Thread(target=loop, daemon=True).start()
     create_app(service).run(host=args.host, port=args.port)
 

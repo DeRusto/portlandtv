@@ -15,6 +15,7 @@
 </select>{% endmacro %}
 {% macro bg(colour) %}{% if colour %} style="background:{{ colour }}"{% endif %}{% endmacro %}
 <h1>PortlandTV</h1>
+<p>Stream for VLC (Media › Open Network Stream): <a href="{{ stream }}">{{ stream }}</a></p>
 <form method="post" action="/">
   <div class="sticky">
     {# first submit button, so Enter in a field saves #}

@@ -1,6 +1,8 @@
 """Library scanner: shows from folder names, episodes in airing order."""
 import os
 import re
+import sys
+import threading
 
 from portlandtv import store
 
@@ -38,13 +40,17 @@ def episode_key(path):
 
 class CachedProber:
     """Prober with a JSON duration cache keyed by path, size and mtime.
-    duration() is None for a file the prober can't read or that has no duration."""
+    duration() is None for a file the prober can't read or that has no duration.
+    With measure=False it never probes: a file not yet measured is 0 (playable, length
+    unknown) and is listed in `pending`."""
 
-    def __init__(self, prober, cache_path):
+    def __init__(self, prober, cache_path, measure=True):
         self.prober = prober
         self.cache_path = cache_path
         self.cache = store.read_json(cache_path, {})
         self.unsaved = 0
+        self.measure = measure
+        self.pending = []
 
     def duration(self, path):
         st = os.stat(path)
@@ -52,6 +58,9 @@ class CachedProber:
         hit = self.cache.get(path)
         if hit and hit["stamp"] == stamp:
             return hit["duration"]
+        if not self.measure:
+            self.pending.append(path)
+            return 0
         try:
             seconds = self.prober.duration(path) or None
         except Exception:
@@ -64,7 +73,8 @@ class CachedProber:
 
     def save(self):
         # shortcut: entries for deleted files are never pruned; prune here if the file grows large
-        store.write_json(self.cache_path, self.cache)
+        # merged over the file, so the Measurer and a build saving at once keep both's work
+        store.write_json(self.cache_path, {**store.read_json(self.cache_path, {}), **self.cache})
         self.unsaved = 0
 
 
@@ -136,3 +146,60 @@ def scan_movies(libraries):
     """Every non-extra video file at any depth of every `movies` Library, one movie each."""
     return sorted(path for lib in libraries if lib.get("kind") == "movies"
                   for path in _videos(_folder(lib)))
+
+
+class Measurer:
+    """Measures new files of the Libraries it is asked for on its own thread, so a page
+    load never waits on the prober. Until start(), want() measures inline (tests)."""
+
+    def __init__(self, prober, cache_path):
+        self.prober = prober
+        self.cache_path = cache_path
+        self.left = 0  # files still to measure, for the UI
+        self._wanted = {}
+        self._lock = threading.Lock()
+        self._wake = None
+        self.idle = threading.Event()  # set while nothing is asked for or being measured
+        self.idle.set()
+
+    def start(self):
+        self._wake = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def want(self, libraries):
+        with self._lock:
+            self._wanted.update(((lib["path"], lib.get("kind")), lib) for lib in libraries)
+            self.idle.clear()
+        if self._wake:
+            self._wake.set()
+        else:
+            self._measure()
+            self.idle.set()
+
+    def _run(self):
+        while True:
+            self._wake.wait()
+            self._wake.clear()
+            try:
+                self._measure()
+            except Exception as e:  # a folder gone mid-walk; the next want() retries
+                self.left = 0
+                print(f"measuring failed: {e}", file=sys.stderr, flush=True)
+            with self._lock:
+                if not self._wanted:
+                    self.idle.set()
+
+    def _measure(self):
+        with self._lock:
+            libs, self._wanted = list(self._wanted.values()), {}
+        libs = [lib for lib in libs if os.path.isdir(lib["path"])]
+        peek = CachedProber(self.prober, self.cache_path, measure=False)
+        scan_shows(libs, peek)
+        for path in scan_filler(libs) + scan_movies(libs):
+            peek.duration(path)
+        self.left = len(peek.pending)
+        prober = CachedProber(self.prober, self.cache_path)
+        for path in peek.pending:
+            prober.duration(path)
+            self.left -= 1
+        prober.save()
