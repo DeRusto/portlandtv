@@ -1,9 +1,12 @@
 import json
 import os
+import tempfile
 import unittest
 
 import yaml
 
+from portlandtv import library
+from tests.fakes import FakeProber
 from tests.harness import Channel, utc
 
 DAY1, DAY2 = utc(2026, 11, 9, 12, 0), utc(2026, 11, 10, 12, 0)
@@ -142,6 +145,20 @@ class LibraryScanTest(unittest.TestCase):
         self.assertEqual(sorted(set(s.prober.calls)),
                          [s.path("Show/Season 1/Show - S01E02.mkv"),
                           s.path("Show/Season 1/Show - S01E03.mkv")])
+
+    def test_a_scan_cut_short_keeps_the_durations_it_probed(self):
+        with tempfile.TemporaryDirectory() as root:
+            paths = [os.path.join(root, f"{n}.mkv") for n in range(library.SAVE_EVERY)]
+            for p in paths:
+                open(p, "w").close()
+            cache = os.path.join(root, "durations.json")
+            first = library.CachedProber(FakeProber(), cache)
+            for p in paths:
+                first.duration(p)  # never saved by hand: the page load was abandoned
+            again = FakeProber()
+            for p in paths:
+                library.CachedProber(again, cache).duration(p)
+            self.assertEqual(again.calls, [])
 
     def test_progress_survives_a_crash_between_the_day_record_and_the_state(self):
         s = self.channel(["Show/Season 1/Show - S01E01.mkv", "Show/Season 1/Show - S01E02.mkv",

@@ -10,6 +10,7 @@ EXTRAS = {"extras", "featurettes", "behind the scenes", "deleted scenes", "inter
           "scenes", "shorts", "trailers", "other", "sample", "samples"}
 EXTRA_FILE = re.compile(r"(^|[-._ ])(sample|trailer|featurette)$", re.I)
 SEASON_DIR = re.compile(r"season\s*(\d+)$", re.I)
+SAVE_EVERY = 20  # new durations between cache writes during a scan
 SXE = re.compile(r"s(\d+)e(\d+)|\b(\d{1,2})x(\d{2,3})\b", re.I)  # S01E02 or 1x02
 
 
@@ -43,6 +44,7 @@ class CachedProber:
         self.prober = prober
         self.cache_path = cache_path
         self.cache = store.read_json(cache_path, {})
+        self.unsaved = 0
 
     def duration(self, path):
         st = os.stat(path)
@@ -55,11 +57,15 @@ class CachedProber:
         except Exception:
             return None  # not cached: a failed probe may be transient (slow drive, timeout)
         self.cache[path] = {"stamp": stamp, "duration": seconds}
+        self.unsaved += 1
+        if self.unsaved >= SAVE_EVERY:  # a long first scan cut short by a reload keeps its work
+            self.save()
         return seconds
 
     def save(self):
         # shortcut: entries for deleted files are never pruned; prune here if the file grows large
         store.write_json(self.cache_path, self.cache)
+        self.unsaved = 0
 
 
 def _videos(folder):
