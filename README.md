@@ -118,6 +118,16 @@ sudo ./install.sh
 
 The installer is safe to re-run. It keeps your schedule, show positions and the ffplayout login.
 
+## Subtitles
+
+ffplayout shows a video's subtitles in the HLS stream when a WebVTT file with the same name sits beside it (`Show - S01E01.vtt` next to `Show - S01E01.mkv`) and its `vtt_enable` playout option is on. To make those files from the subtitles inside your videos, run this from the repo as a user who can write to the media folders:
+
+```bash
+python3 -m portlandtv.subtitles /media/tv /media/movies
+```
+
+It takes the first English text subtitle track in each video, or the first text track if none is English (`--language fre` prefers French), and skips tracks marked forced-only. Picture subtitles from Blu-rays and DVDs can't be turned into text, so videos with only those are skipped. Videos that already have a `.vtt` are left alone, so it is safe to re-run after adding files.
+
 ## Where things live
 
 | Path | What |
