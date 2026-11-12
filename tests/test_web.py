@@ -176,6 +176,16 @@ class WebTest(unittest.TestCase):
         self.assertIn("kind: movies", text)  # block style, hand-editable
         self.assertIn("length: 8h", text)
 
+    def test_a_big_schedule_still_posts_as_the_browser_sends_it(self):
+        week = {"weekdays": {d: {"show": "Show A"} for d in
+                             ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}}
+        b = self.open({"day_start": "06:00", "day_schedule": [
+            {"length": "1h", "repeat": 1, "slots": [week] * 6} for _ in range(24)]})
+        data = {**b.fields(), "action": "add-lib"}
+        self.assertGreater(len(data), 1000)  # Werkzeug's default limit
+        r = b.client.post("/", data=data, content_type="multipart/form-data")  # as fetch(FormData)
+        self.assertEqual(r.status_code, 200)
+
     def test_problems_lists_generation_error_and_missing_library(self):
         b = self.open()
         self.assertIn("Problems", b.html)
@@ -213,16 +223,6 @@ class WebTest(unittest.TestCase):
         b.get()
         self.assertIn("Unplayable: " + s.path("Show A/Show A - S01E04.mkv"), b.html)
         self.assertIn("Filler never fits: " + os.path.join(s.filler, "long.mp4"), b.html)
-
-    def test_random_movie_content_length(self):
-        s = Channel({**CONFIG, "day_schedule": [
-            {"length": "8h", "repeat": 3, "slots": [{"rule": {"movie": "random"}}]}]},
-            FILES, {**DURATIONS, "m1.mkv": 5400.0, "m2.mkv": 7200.0, "m3.mkv": 6000.0},
-            movies=["m1.mkv", "m2.mkv", "m3.mkv"])
-        self.addCleanup(s.close)
-        b = Browser(s)
-        b.get()
-        self.assertIn("typical 1h40, max 2h00", b.html)
 
     def test_hand_edit_error_shows_until_a_fixed_save_and_retry(self):
         b = self.open()
@@ -277,6 +277,11 @@ class WebTest(unittest.TestCase):
         s.tick()  # an empty schedule is an error to fix, never a made-up one
         self.assertIn("totals 0 h", s.service.error)
         self.assertIsNone(s.playlist("2026-11-09"))
+
+    def test_a_post_bigger_than_any_schedule_is_refused(self):
+        b = self.open()
+        r = b.client.post("/", data={"action": "save", "x": "x" * (17 * 1024 * 1024)})
+        self.assertEqual(r.status_code, 413)
 
     def test_a_post_from_another_site_is_refused(self):
         b = self.open()

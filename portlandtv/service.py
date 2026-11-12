@@ -3,7 +3,7 @@ import os
 import threading
 from datetime import datetime, timedelta, timezone
 
-from portlandtv import cards, config, day, library, store
+from portlandtv import cards, config, day, library, records, store
 
 LEAD = timedelta(hours=1)
 
@@ -17,6 +17,7 @@ class Service:
         self.clock = clock
         self.ffplayout = ffplayout
         self.paths = store.Paths(config_path)
+        self.records = records.Records(self.paths.root)
         self.error = None  # last generation error, for the UI
         self.push_error = None  # last failed push to ffplayout, for the UI
         self.today = None  # date the current Broadcast Day started on, as of the last tick
@@ -49,7 +50,7 @@ class Service:
         with self._lock:
             try:
                 cfg = config.load(self.config_path)
-                self._unbuild(self._start(cfg).date() + timedelta(days=1))
+                self.records.unbuild(self._start(cfg).date() + timedelta(days=1))
             except Exception as e:
                 self.error = str(e)
                 return
@@ -62,10 +63,10 @@ class Service:
             try:
                 cfg = config.load(self.config_path)
                 today = self._start(cfg).date()
-                record = store.read_json(self.paths.day(today), None)
+                record = self.records.get(today)
                 if record:
-                    self._unbuild(today + timedelta(days=1))  # it follows on from today
-                    self._build(cfg, today, record["state_before"], record.get("picked", ()))
+                    self.records.unbuild(today + timedelta(days=1))  # it follows on from today
+                    self._build(cfg, today, record.state_before, record.picked)
             except Exception as e:
                 self.error = str(e)
                 return
@@ -96,33 +97,20 @@ class Service:
             store.write_json(self.paths.ffplayout, {**known, "size": size})
         return tuple(size)
 
-    def _unbuild(self, date):
-        """Forget the generated day `date`, putting the state back to before it."""
-        record_path = self.paths.day(date)
-        record = store.read_json(record_path, None)
-        if record:
-            store.write_json(self.paths.state, record["state_before"])
-            os.remove(record_path)
-
     def _ensure(self, cfg, date):
         """Generate the Broadcast Day starting on `date` unless it already was."""
-        if not os.path.exists(self.paths.day(date)):
-            # the day before's record wins over state.json: a crash may have come between them
-            prev = store.read_json(self.paths.day(date - timedelta(days=1)), {})
-            before = prev.get("state_after") or store.read_json(self.paths.state, {"shows": {}})
-            self._build(cfg, date, before)
+        if self.records.get(date) is None:
+            self._build(cfg, date, self.records.state_before(date))
 
     def _build(self, cfg, date, before, kept=()):
         """Generate the Broadcast Day starting on `date` from the state `before` it."""
-        record_path = self.paths.day(date)
         prober = library.CachedProber(self.prober, self.paths.durations)
-        shows, self.unplayable = library.scan_shows(cfg["libraries"], prober)
-        filler, movies = [], []
-        for found, paths in ((filler, library.scan_filler(cfg["libraries"])),
-                             (movies, library.scan_movies(cfg["libraries"]))):
-            for path in paths:
-                (found if prober.duration(path) else self.unplayable).append(path)
+        found = library.catalogue(cfg["libraries"], prober)
         prober.save()
+        self.unplayable = found.unplayable
+        if found.missing:  # a build never airs a Library silently empty
+            raise FileNotFoundError(f"Library missing: {found.missing[0]}")
+        shows, filler, movies = found.shows, found.filler, found.movies
         size = self._output_size()
         show_of = {p: name for name, eps in shows.items() for p in eps}
 
@@ -138,16 +126,11 @@ class Service:
         # atomic, so ffplayout reloads a whole playlist at its next clip boundary
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": built.program})
-        store.write_json(record_path, {"slots": built.block_items, "problems": built.problems,
-                                       "state_before": before, "state_after": built.state,
-                                       "never_fits": built.never_fits,
-                                       "tail": sequence[-day.AHEAD:],
-                                       "picked": built.slot_fills})
-        store.write_json(self.paths.state, built.state)
+        self.records.commit(date, before, built)
         # the previous day's last cards were placeholders until this day's items were known
-        prev = store.read_json(self.paths.day(date - timedelta(days=1)), {})
-        if "tail" in prev:
-            tail = prev["tail"]
+        prev = self.records.get(date - timedelta(days=1))
+        if prev and prev.tail is not None:
+            tail = prev.tail
             prev_date = date - timedelta(days=1)
             prev_card = self._card_writer(describe, prev_date, size)
             # end-(n) shows the day's items from len(tail) - n + 1; n reaches len(tail) + 1
