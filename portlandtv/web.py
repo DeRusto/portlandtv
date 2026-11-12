@@ -39,7 +39,8 @@ def _block(length, repeat, slots):
 
 
 def _from_form(form, raw):
-    """The posted form over `raw` (keys the form doesn't edit are kept)."""
+    """The posted form over `raw` (keys the form doesn't edit are kept), and the Show
+    Groups it renamed, as (old, new)."""
     libs, i = [], 0
     while f"lib{i}.path" in form:
         libs.append({"path": form[f"lib{i}.path"].strip(), "kind": form[f"lib{i}.kind"]})
@@ -73,11 +74,11 @@ def _from_form(form, raw):
         i += 1
     out = {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries,
            "show_groups": groups}
-    for was, name in renames:
-        draft.rename_group(out, was, name)
+    renames = [(was, name.strip()) for was, name in renames
+               if draft.rename_group(out, was, name)]
     if "day_start" in form:
         out["day_start"] = form["day_start"].strip()
-    return out
+    return out, renames
 
 
 def _apply(raw, action, form):
@@ -269,7 +270,7 @@ def create_app(service):
         origin = request.headers.get("Origin")
         if origin and urlparse(origin).netloc != request.host:
             return "Cross-site edit refused", 403
-        raw = _from_form(request.form, config.read_raw(service.config_path))
+        raw, renames = _from_form(request.form, config.read_raw(service.config_path))
         action = request.form.get("action", "save")
         if action == "distribute":
             return render(raw, preview=True)
@@ -289,7 +290,7 @@ def create_app(service):
             config.save(service.config_path, raw)
         except config.ConfigError as e:
             return render(raw, error=str(e), status=400)
-        service.on_save()
+        service.on_save(renames)
         if action == "rebuild":
             service.rebuild_today()
         return redirect("/", 303)

@@ -44,13 +44,17 @@ class Service:
             except Exception as e:
                 self.push_error = str(e)
 
-    def on_save(self):
+    def on_save(self, renames=()):
         """After the YAML is saved: a generated day that hasn't started is regenerated
-        from its pre-generation state; today stays as it is."""
+        from its pre-generation state; today stays as it is. `renames`: the Show Groups
+        renamed, as (old, new), whose progress carries over."""
         with self._lock:
             try:
                 cfg = config.load(self.config_path)
-                self.records.unbuild(self._start(cfg).date() + timedelta(days=1))
+                today = self._start(cfg).date()
+                for old, new in renames:
+                    self.records.rename_group(old, new, (today, today + timedelta(days=1)))
+                self.records.unbuild(today + timedelta(days=1))
             except Exception as e:
                 self.error = str(e)
                 return
