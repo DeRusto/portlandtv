@@ -20,6 +20,10 @@ _Avoid_: Playlist, segment
 The sequence of Blocks, each with a length and a repeat count, that exactly fills one Broadcast Day on a Channel; the same Blocks run every Broadcast Day, though a distributed Slot's rule varies by weekday.
 _Avoid_: Lineup, rotation
 
+**Draft**:
+The Day Schedule, Libraries, Show List and Show Groups as edited in the web UI, before they are saved.
+_Avoid_: Form, pending config
+
 **Slot**:
 A position in a Block defined by a rule (e.g. "next episode of Show A"), filled with a concrete item once per Broadcast Day. A **fixed** Slot has one rule all week; a **distributed** Slot has a weekday rule for each weekday.
 _Avoid_: Entry, placeholder

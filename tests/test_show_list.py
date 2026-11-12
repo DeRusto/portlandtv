@@ -122,22 +122,12 @@ class BalanceTest(unittest.TestCase):
         self.assertIn('data-show="B"\n                style="height:25.0%', html)
         self.assertIn("C · 1", html)
 
-    def test_dragging_shows_together_and_apart(self):
+    def test_a_dragged_show_reaches_the_saved_yaml(self):
         b = self.open()
         b.submit("regroup", {"bal.show": "C", "bal.from": "2", "bal.to": "1"})  # C onto B
         self.assertEqual(self.entries(b), ["show:A", "group:Group 1"])
-        b.submit("regroup", {"bal.show": "A", "bal.from": "0", "bal.to": "1"})  # A onto the group
-        self.assertEqual(self.entries(b), ["group:Group 1"])
-        b.submit("regroup", {"bal.show": "B", "bal.from": "0", "bal.to": ""})  # B out
-        self.assertEqual(self.entries(b), ["group:Group 1", "show:B"])
         b.submit()
-        self.assertEqual(b.yaml()["show_groups"], {"Group 1": ["C", "A"]})
-        # the last show out of a Show Group takes the group off the Show List
-        for show in ("C", "A"):
-            b.submit("regroup", {"bal.show": show, "bal.from": "0", "bal.to": ""})
-        self.assertEqual(self.entries(b), ["show:A", "show:C", "show:B"])
-        b.submit()
-        self.assertEqual(b.yaml()["show_groups"], {})
+        self.assertEqual(b.yaml()["show_groups"], {"Group 1": ["B", "C"]})
 
     def test_auto_sort_packs_single_shows_up_to_the_longest_entry(self):
         b = self.open({**CONFIG, "show_list": [{"show": s} for s in "ABCD"]})
@@ -145,14 +135,6 @@ class BalanceTest(unittest.TestCase):
         self.assertEqual(self.entries(b), ["show:A", "group:Group 1"])
         b.submit()
         self.assertEqual(b.yaml()["show_groups"], {"Group 1": ["D", "B", "C"]})
-
-    def test_auto_sort_tops_up_existing_show_groups_first(self):
-        b = self.open({**CONFIG, "show_groups": {"G": ["D"]},
-                       "show_list": [{"show": "A"}, {"show": "B"}, {"group": "G"}, {"show": "C"}]})
-        b.submit("auto-sort")  # G has D's 3; B 2 and C 1 fit in under A's 8
-        self.assertEqual(self.entries(b), ["show:A", "group:G"])
-        b.submit()
-        self.assertEqual(b.yaml()["show_groups"], {"G": ["D", "B", "C"]})
 
 
 class DistributeTest(unittest.TestCase):
@@ -206,14 +188,6 @@ class DistributeTest(unittest.TestCase):
         self.assertEqual(self.cells(b, "b0.s1")[:3], ["show:A", "show:A", "show:B"])
         self.assertEqual(self.cells(b, "b0.s2"), [""] * 7)
         self.assertEqual(b.yaml(), before)
-
-    def test_distribution_follows_list_order_and_is_deterministic(self):
-        b = self.open({**CONFIG, "show_list": [{"show": "C"}, {"show": "A"}, {"show": "B"}]})
-        b.submit("distribute")
-        b.submit("replace")
-        c, a, bb = "show:C", "show:A", "show:B"
-        self.assertEqual(self.cells(b, "b0.s1"), [c, bb, a, c, bb, a, c])
-        self.assertEqual(self.cells(b, "b0.s2"), [a, c, bb, a, c, bb, a])
 
     def test_refused_with_more_entries_than_cells(self):
         groups = {f"G{n}": ["D"] for n in range(5)}

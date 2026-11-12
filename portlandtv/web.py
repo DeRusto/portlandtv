@@ -6,6 +6,7 @@ validate and write the YAML.
 """
 import collections
 import os
+import re
 import statistics
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -13,7 +14,7 @@ from urllib.parse import urlparse
 from flask import Flask, Request, redirect, render_template, request
 from markupsafe import escape
 
-from portlandtv import config, distributor, library, slots, store
+from portlandtv import config, distributor, draft, library, slots, store
 
 # Show List colours, by entry position; off-list rules are grey
 PALETTE = ("#cfe3ff", "#d6f5d6", "#ffe1c4", "#ecd9ff", "#ffd6e0", "#d4f1f4", "#fff3b0", "#e2e2ff")
@@ -42,6 +43,13 @@ def _form_rule(value):
     return {kind: name} if kind else None
 
 
+def _block(length, repeat, slots):
+    """A raw Block from form text; `repeat` is stored as a number when it is one."""
+    repeat = repeat.strip()
+    return {"length": length.strip(), "repeat": int(repeat) if repeat.isdigit() else repeat,
+            "slots": slots}
+
+
 def _from_form(form, raw):
     """The posted form over `raw` (keys the form doesn't edit are kept)."""
     libs, i = [], 0
@@ -53,12 +61,12 @@ def _from_form(form, raw):
         slots, j = [], 0
         while (s := f"b{i}.s{j}") + ".rule" in form or s + ".mon" in form:
             if s + ".mon" in form:
-                slots.append(config.distributed_slot(
+                slots.append(draft.distributed_slot(
                     [_form_rule(form[f"{s}.{d}"]) for d in config.WEEKDAYS]))
             else:
-                slots.append(config.fixed_slot(_form_rule(form[s + ".rule"])))
+                slots.append(draft.fixed_slot(_form_rule(form[s + ".rule"])))
             j += 1
-        blocks.append(config.block(form[f"b{i}.length"], form[f"b{i}.repeat"], slots))
+        blocks.append(_block(form[f"b{i}.length"], form[f"b{i}.repeat"], slots))
         i += 1
     entries, k = [], 0
     while f"sl{k}" in form:
@@ -70,140 +78,50 @@ def _from_form(form, raw):
         while f"g{i}.m{j}" in form:
             members.append(form[f"g{i}.m{j}"])
             j += 1
-        was, name = form.get(f"g{i}.was", ""), form[f"g{i}.name"].strip()
-        if not name or name in groups:  # an empty or taken name keeps the old one
-            name = was
-        if was and name != was:
+        was, name = form.get(f"g{i}.was", ""), form[f"g{i}.name"]
+        groups[was or name.strip()] = members
+        if was:
             renames.append((was, name))
-        groups[name] = members
         i += 1
     out = {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries,
            "show_groups": groups}
     for was, name in renames:
-        config.rename_group(out, was, name)
+        draft.rename_group(out, was, name)
     if "day_start" in form:
         out["day_start"] = form["day_start"].strip()
     return out
 
 
-def _move(items, j, k):
-    if 0 <= k < len(items):
-        items[j], items[k] = items[k], items[j]
-
-
 def _apply(raw, action, form):
-    """Edit the draft for one button: add/del/up/down of Blocks, Slots, Libraries,
-    Show List entries and Show Groups and their shows (picked in the form's add dropdowns)."""
+    """One button's edit of the Draft: `verb:i:j` picks the Block, Slot, entry, Show Group
+    (by position on the page) or Library, and the form gives what the add dropdowns picked."""
     verb, _, args = action.partition(":")
     idx = [int(a) for a in args.split(":") if a]
-    blocks, libs, entries = raw["day_schedule"], raw["libraries"], raw["show_list"]
-    groups = raw["show_groups"]
-    names = list(groups)
-    if verb == "add-block":
-        blocks.append(config.new_block())
-    elif verb == "del-block":
-        del blocks[idx[0]]
-    elif verb == "add-slot":
-        blocks[idx[0]]["slots"].append(config.fixed_slot(None))
-    elif verb == "add-dslot":  # a new distributed Slot starts empty
-        blocks[idx[0]]["slots"].append(config.distributed_slot([]))
-    elif verb == "mode-slot":  # distributed -> fixed keeps only Monday: the page confirms
-        slots = blocks[idx[0]]["slots"]
-        slots[idx[1]] = config.switch_mode(slots[idx[1]])
-    elif verb == "del-slot":
-        del blocks[idx[0]]["slots"][idx[1]]
-    elif verb in ("up-slot", "down-slot"):
-        j = idx[1]
-        _move(blocks[idx[0]]["slots"], j, j - 1 if verb == "up-slot" else j + 1)
-    elif verb in ("up-entry", "down-entry"):
-        _move(entries, idx[0], idx[0] - 1 if verb == "up-entry" else idx[0] + 1)
-    elif verb == "del-entry":  # the grid is left as it is
-        del entries[idx[0]]
-    elif verb == "add-entry":  # every ticked show and Show Group
-        for rule in map(_form_rule, form.getlist("sl.add")):
-            if rule and rule not in entries:
-                entries.append(rule)
-    elif verb == "add-group" and (name := form.get("g.new", "").strip()) and name not in groups:
-        groups[name] = []
-    elif verb == "del-group":  # Slots and entries naming it are flagged, not changed
-        del groups[names[idx[0]]]
-    elif verb == "add-member" and (show := form.get(f"g{idx[0]}.add", ""))             and show not in groups[names[idx[0]]]:
-        groups[names[idx[0]]].append(show)
-    elif verb == "del-member":
-        del groups[names[idx[0]]][idx[1]]
-    elif verb in ("up-member", "down-member"):
-        j = idx[1]
-        _move(groups[names[idx[0]]], j, j - 1 if verb == "up-member" else j + 1)
-    elif verb == "add-lib":
-        libs.append({"path": "", "kind": "shows"})
-    elif verb == "del-lib":
-        del libs[idx[0]]
-    elif verb == "regroup":  # a show dragged in the balance view
-        to = form.get("bal.to", "")
-        _regroup(raw, form["bal.show"], int(form["bal.from"]), int(to) if to else None)
-
-
-def _new_group(groups):
-    return next(f"Group {n}" for n in range(1, len(groups) + 2) if f"Group {n}" not in groups)
-
-
-def _regroup(raw, show, src, dst):
-    """Move `show` out of Show List entry `src` into entry `dst`, or into its own entry when
-    `dst` is None. Dropping it on a show makes a new Show Group of the two in its place; a
-    Show Group left with no shows leaves the Show List (Slots naming it are flagged)."""
-    entries, groups = raw["show_list"], raw["show_groups"]
-    target = None if dst is None else entries[dst]
-    source = entries[src]
-    if target is source or (target is None and "show" in source):
-        return
-    if target is None:  # before `source` may go, so it lands just after it
-        entries.insert(src + 1, {"show": show})
-    if "group" in source:
-        members = groups[source["group"]]
-        members.remove(show)
-        if not members:
-            del groups[source["group"]]
-            entries.remove(source)
-    else:
-        entries.remove(source)
-    if target is None:
-        pass
-    elif "group" in target:
-        if show not in groups[target["group"]]:
-            groups[target["group"]].append(show)
-    else:
-        name = _new_group(groups)
-        groups[name] = [target["show"], show]
-        entries[entries.index(target)] = {"group": name}
-
-
-def _auto_sort(raw, left):
-    """Pack the Show List's single shows (episodes left in `left`, per entry) into Show
-    Groups lasting no longer than its longest entry: largest first, each into the first
-    existing or new group it fits, else a new one. A new group of one stays a single show."""
-    entries, groups = raw["show_list"], raw["show_groups"]
-    target = max(left, default=0)
-    # [episodes, entry index, single shows' entry indexes]: Show List groups first
-    bins = [[left[i], i, []] for i, e in enumerate(entries) if "group" in e]
-    singles = sorted((i for i, e in enumerate(entries) if "show" in e), key=lambda i: -left[i])
-    for i in singles:
-        fit = next((b for b in bins if b[0] + left[i] <= target), None)
-        if fit:
-            fit[0] += left[i]
-            fit[2].append(i)
-        else:
-            bins.append([left[i], i, []])
-    gone = set()
-    for _, at, added in bins:
-        if not added:
-            continue
-        if "show" in entries[at]:  # a new group, in its largest show's place
-            name = _new_group(groups)
-            groups[name] = [entries[at]["show"]]
-            entries[at] = {"group": name}
-        groups[entries[at]["group"]] += [entries[i]["show"] for i in added]
-        gone.update(added)
-    entries[:] = [e for i, e in enumerate(entries) if i not in gone]
+    step = -1 if verb.startswith("up-") else 1
+    names = list(raw["show_groups"])
+    to = form.get("bal.to", "")
+    edits = {
+        "add-block": lambda: draft.add_block(raw),
+        "del-block": lambda: draft.delete_block(raw, idx[0]),
+        "add-slot": lambda: draft.add_slot(raw, idx[0]),
+        "add-dslot": lambda: draft.add_slot(raw, idx[0], distributed=True),
+        "mode-slot": lambda: draft.switch_mode(raw, *idx),
+        "del-slot": lambda: draft.delete_slot(raw, *idx),
+        "move-slot": lambda: draft.move_slot(raw, *idx, step),
+        "move-entry": lambda: draft.move_entry(raw, idx[0], step),
+        "del-entry": lambda: draft.delete_entry(raw, idx[0]),
+        "add-entry": lambda: draft.add_entries(raw, map(_form_rule, form.getlist("sl.add"))),
+        "add-group": lambda: draft.add_group(raw, form.get("g.new", "")),
+        "del-group": lambda: draft.delete_group(raw, names[idx[0]]),
+        "add-member": lambda: draft.add_member(raw, names[idx[0]], form.get(f"g{idx[0]}.add", "")),
+        "del-member": lambda: draft.delete_member(raw, names[idx[0]], idx[1]),
+        "move-member": lambda: draft.move_member(raw, names[idx[0]], idx[1], step),
+        "add-lib": lambda: draft.add_library(raw),
+        "del-lib": lambda: draft.delete_library(raw, idx[0]),
+        "regroup": lambda: draft.regroup(raw, form["bal.show"], int(form["bal.from"]),
+                                         int(to) if to else None),
+    }
+    edits.get(re.sub(r"^(up|down)-", "move-", verb), lambda: None)()
 
 
 class _Request(Request):
@@ -255,14 +173,9 @@ def create_app(service):
         return [slots.episodes_left(e, shows, raw.get("show_groups") or {}, state)
                 for e in raw["show_list"]]
 
-    def distributed(raw):
-        """[(Block n, Slot m, Slot)] of the distributed Slots, in Distribute's cell order."""
-        return [(n, m, s) for n, b in enumerate(raw["day_schedule"], 1)
-                for m, s in enumerate(b.get("slots") or [], 1) if not config.is_fixed(s)]
-
     def plan(raw):
         """New Weekday Rules per distributed Slot; raises distributor.Refused."""
-        return distributor.distribute(raw["show_list"], len(distributed(raw)))
+        return distributor.distribute(raw["show_list"], len(draft.distributed_slots(raw)))
 
     def render(raw, error=None, status=200, preview=False, refused=None):
         try:
@@ -359,7 +272,7 @@ def create_app(service):
                 refused = str(e)
             else:
                 rows, after = [], cells.copy()
-                for (n, m, s), rules in zip(distributed(raw), new):
+                for (n, m, s), rules in zip(draft.distributed_slots(raw), new):
                     now = [_rule_key(r) for r in config.slot_rules(s)]
                     then = [_rule_key(r) for r in rules]
                     after.subtract(k for k in now if k)
@@ -423,14 +336,12 @@ def create_app(service):
             return render(raw, preview=True)
         if action == "replace":  # the dialog's confirm: overwrite every distributed cell, save
             try:
-                new = plan(raw)
+                draft.distribute(raw)
             except distributor.Refused as e:
                 return render(raw, refused=str(e))
-            for (_, _, s), rules in zip(distributed(raw), new):
-                s.update(config.distributed_slot(rules))
             action = "save"
         if action == "auto-sort":
-            _auto_sort(raw, remaining(raw, scan(raw)[2]))
+            draft.auto_sort(raw, remaining(raw, scan(raw)[2]))
             return render(raw)
         if action not in ("save", "rebuild"):
             _apply(raw, action, request.form)

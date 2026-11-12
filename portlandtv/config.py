@@ -77,27 +77,6 @@ def save(path, raw):
     store.write_atomic(path, lambda f: f.write(text.encode()))
 
 
-def block(length, repeat, slots):
-    """A raw Block from form text; `repeat` is stored as a number when it is one."""
-    repeat = repeat.strip()
-    return {"length": length.strip(), "repeat": int(repeat) if repeat.isdigit() else repeat,
-            "slots": slots}
-
-
-def new_block():
-    return {"length": "1h", "repeat": 1, "slots": [fixed_slot(None)]}
-
-
-def fixed_slot(rule):
-    """A raw fixed Slot airing `rule` every day; no rule is an empty Slot."""
-    return {"rule": rule} if rule else {}
-
-
-def distributed_slot(rules):
-    """A raw distributed Slot from its rules Mon..Sun; only non-empty days are stored."""
-    return {"weekdays": {d: dict(r) for d, r in zip(WEEKDAYS, rules) if r}}
-
-
 def is_fixed(slot):
     return "weekdays" not in slot
 
@@ -107,13 +86,6 @@ def slot_rules(slot):
     if is_fixed(slot):
         return [slot.get("rule") or {}] * 7
     return [(slot["weekdays"] or {}).get(d) or {} for d in WEEKDAYS]
-
-
-def switch_mode(slot):
-    """Fixed -> distributed with the rule on all seven days; distributed -> fixed
-    keeping Monday's rule."""
-    rules = slot_rules(slot)
-    return distributed_slot(rules) if is_fixed(slot) else fixed_slot(rules[0])
 
 
 def length_repeat(raw_block):
@@ -130,17 +102,6 @@ def _rule(rule):
     if "movie" in rule and rule["movie"] != "random":
         raise ConfigError(f"unknown Slot rule {rule!r}, the movie rule is {{movie: random}}")
     return rule
-
-
-def rename_group(raw, old, new):
-    """Point every Slot rule and Show List entry naming Show Group `old` at `new`."""
-    rules = list(raw["show_list"])
-    for b in raw["day_schedule"]:
-        for s in b.get("slots") or []:
-            rules += [s.get("rule")] + list((s.get("weekdays") or {}).values())
-    for r in rules:
-        if isinstance(r, dict) and r.get("group") == old:
-            r["group"] = new
 
 
 def on_weekday(cfg, weekday):
