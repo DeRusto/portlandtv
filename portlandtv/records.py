@@ -55,6 +55,21 @@ class Records:
             "picked": built.slot_fills})
         store.write_json(self.state_path, built.state)
 
+    def rename_group(self, old, new, dates):
+        """Carry Show Group `old`'s progress over to `new` in state.json and in the Day
+        Records of `dates` (the ones a later build still starts from)."""
+        def renamed(state):
+            groups = (state or {}).get("groups") or {}
+            if old in groups:
+                state["groups"] = {new if k == old else k: v for k, v in groups.items()}
+            return state
+        for date in dates:
+            r = store.read_json(self.path(date), None)
+            if r is not None:
+                renamed(r["state_before"]), renamed(r.get("state_after"))
+                store.write_json(self.path(date), r)
+        store.write_json(self.state_path, renamed(self.state()))
+
     def unbuild(self, date):
         """Forget the generated day `date`, putting the state back to before it. The record
         goes first: a crash before the state is put back leaves no record, and state_before

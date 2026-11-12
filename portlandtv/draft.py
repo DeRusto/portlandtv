@@ -108,11 +108,11 @@ def move_member(raw, group, j, step):
 
 def rename_group(raw, old, new):
     """Rename Show Group `old` in place, pointing every Slot rule and Show List entry
-    naming it at `new`. An empty or taken name keeps the old one."""
+    naming it at `new`. An empty or taken name keeps the old one. True if renamed."""
     new = new.strip()
     groups = raw["show_groups"]
     if not new or new in groups or old not in groups:
-        return
+        return False
     raw["show_groups"] = {new if k == old else k: v for k, v in groups.items()}
     rules = list(raw["show_list"])
     for b in raw["day_schedule"]:
@@ -121,6 +121,7 @@ def rename_group(raw, old, new):
     for r in rules:
         if isinstance(r, dict) and r.get("group") == old:
             r["group"] = new
+    return True
 
 
 def _new_group(groups):
