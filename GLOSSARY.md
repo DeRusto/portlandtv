@@ -25,7 +25,7 @@ The sequence of Blocks, each with a length and a repeat count, that exactly fill
 _Avoid_: Lineup, rotation
 
 **Draft**:
-The Day Schedule, Libraries, Show List and Show Groups as edited in the web UI, before they are saved.
+The Day Schedule, Broadcast Day start, Libraries, Show List and Show Groups as edited in the web UI, before they are saved.
 _Avoid_: Form, pending config
 
 **Review**:

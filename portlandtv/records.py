@@ -56,8 +56,10 @@ class Records:
         store.write_json(self.state_path, built.state)
 
     def unbuild(self, date):
-        """Forget the generated day `date`, putting the state back to before it."""
+        """Forget the generated day `date`, putting the state back to before it. The record
+        goes first: a crash before the state is put back leaves no record, and state_before
+        then takes the day before's state_after over the stale state.json."""
         record = self.get(date)
         if record is not None:
-            store.write_json(self.state_path, record.state_before)
             os.remove(self.path(date))
+            store.write_json(self.state_path, record.state_before)

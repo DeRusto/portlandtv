@@ -120,6 +120,8 @@ class _Request(Request):
 def create_app(service):
     app = Flask(__name__)
     app.request_class = _Request
+    # no login (spec): bound a post's whole body too, far above the biggest schedule's form
+    app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
     def problems(missing_libs, schedule):
         out = list(schedule)

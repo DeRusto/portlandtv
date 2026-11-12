@@ -107,10 +107,10 @@ class Service:
         prober = library.CachedProber(self.prober, self.paths.durations)
         found = library.catalogue(cfg["libraries"], prober)
         prober.save()
+        self.unplayable = found.unplayable
         if found.missing:  # a build never airs a Library silently empty
             raise FileNotFoundError(f"Library missing: {found.missing[0]}")
         shows, filler, movies = found.shows, found.filler, found.movies
-        self.unplayable = found.unplayable
         size = self._output_size()
         show_of = {p: name for name, eps in shows.items() for p in eps}
 

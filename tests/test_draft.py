@@ -83,6 +83,12 @@ class RegroupTest(unittest.TestCase):
         self.assertEqual(entries(r), ["A", "C", "B"])
         self.assertEqual(r["show_groups"], {})
 
+    def test_a_hand_edited_duplicate_entry_moves_by_position(self):
+        r = raw(show_list=[A, B, A])
+        draft.regroup(r, "A", 2, 1)  # the second A onto B
+        self.assertEqual(entries(r), ["A", "group:Group 1"])
+        self.assertEqual(r["show_groups"], {"Group 1": ["B", "A"]})
+
     def test_a_single_show_dragged_out_or_onto_itself_stays(self):
         r = raw(show_list=[A, B])
         draft.regroup(r, "A", 0, None)

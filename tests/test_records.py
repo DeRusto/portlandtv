@@ -5,8 +5,9 @@ import shutil
 import tempfile
 import unittest
 from datetime import date
+from unittest import mock
 
-from portlandtv import day, records
+from portlandtv import day, records, store
 
 DAY1, DAY2 = date(2026, 11, 9), date(2026, 11, 10)
 S0, S1, S2 = ({"shows": {"A": {"path": f"A/{n}.mkv", "key": [1, n]}}} for n in range(3))
@@ -42,6 +43,32 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual(r.tail, ["b", "c", "d"])  # the last day.AHEAD items
         self.assertEqual(r.picked, [[[{"show": "A"}, "a"]]])
         self.assertEqual(self.records.state(), S1)
+        self.assertEqual(self.records.state_before(DAY2), S1)
+
+    def crash_on_state_write(self):
+        """Patch store.write_json so writing state.json dies, as a power cut would."""
+        real = store.write_json
+
+        def write(path, data):
+            if path == self.records.state_path:
+                raise OSError("power cut")
+            real(path, data)
+        return mock.patch.object(store, "write_json", write)
+
+    def test_a_crash_in_commit_comes_after_the_record(self):
+        self.records.commit(DAY1, S0, built(S1))
+        with self.crash_on_state_write(), self.assertRaises(OSError):
+            self.records.commit(DAY2, S1, built(S2))
+        self.assertEqual(self.records.get(DAY2).state_after, S2)
+        self.assertEqual(self.records.state(), S1)
+
+    def test_a_crash_in_unbuild_comes_after_the_record_is_gone(self):
+        self.records.commit(DAY1, S0, built(S1))
+        self.records.commit(DAY2, S1, built(S2))
+        with self.crash_on_state_write(), self.assertRaises(OSError):
+            self.records.unbuild(DAY2)
+        self.assertIsNone(self.records.get(DAY2))
+        self.assertEqual(self.records.state(), S2)  # stale, but the day before's record wins
         self.assertEqual(self.records.state_before(DAY2), S1)
 
     def test_the_day_befores_record_wins_over_a_stale_state(self):

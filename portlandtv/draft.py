@@ -132,29 +132,28 @@ def regroup(raw, show, src, dst):
     `dst` is None. Dropping it on a show makes a new Show Group of the two in its place; a
     Show Group left with no shows leaves the Show List (Slots naming it are flagged)."""
     entries, groups = raw["show_list"], raw["show_groups"]
-    target = None if dst is None else entries[dst]
     source = entries[src]
-    if target is source or (target is None and "show" in source):
+    if dst == src or (dst is None and "show" in source):
         return
-    if target is None:  # before `source` may go, so it lands just after it
-        entries.insert(src + 1, {"show": show})
+    gone = True  # whether entry `src` leaves the Show List
     if "group" in source:
         members = groups[source["group"]]
         members.remove(show)
-        if not members:
+        gone = not members
+        if gone:
             del groups[source["group"]]
-            entries.remove(source)
-    else:
-        entries.remove(source)
-    if target is None:
-        pass
-    elif "group" in target:
-        if show not in groups[target["group"]]:
-            groups[target["group"]].append(show)
+    # by position, never by value: a hand-edited Show List may hold an entry twice
+    if dst is None:
+        entries.insert(src + 1, {"show": show})
+    elif "group" in entries[dst]:
+        if show not in groups[entries[dst]["group"]]:
+            groups[entries[dst]["group"]].append(show)
     else:
         name = _new_group(groups)
-        groups[name] = [target["show"], show]
-        entries[entries.index(target)] = {"group": name}
+        groups[name] = [entries[dst]["show"], show]
+        entries[dst] = {"group": name}
+    if gone:
+        del entries[src]
 
 
 def auto_sort(raw, left):

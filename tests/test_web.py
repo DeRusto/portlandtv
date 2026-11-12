@@ -278,6 +278,11 @@ class WebTest(unittest.TestCase):
         self.assertIn("totals 0 h", s.service.error)
         self.assertIsNone(s.playlist("2026-11-09"))
 
+    def test_a_post_bigger_than_any_schedule_is_refused(self):
+        b = self.open()
+        r = b.client.post("/", data={"action": "save", "x": "x" * (17 * 1024 * 1024)})
+        self.assertEqual(r.status_code, 413)
+
     def test_a_post_from_another_site_is_refused(self):
         b = self.open()
         before = b.yaml()
