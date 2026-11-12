@@ -166,7 +166,7 @@ class LibraryScanTest(unittest.TestCase):
                           "Show/Season 1/Show - S01E03.mkv"], slots=1)
         s.tick(DAY1)
         # the day record was written, then the process died before state.json was
-        with open(s.service.paths.state, "w") as f:
+        with open(s.service.records.state_path, "w") as f:
             json.dump(s.read_json("days/2026-11-09.json")["state_before"], f)
         s.tick(DAY2)
         self.assertEqual(self.aired(s, "2026-11-10"), ["shows/Show/Season 1/Show - S01E02.mkv"])

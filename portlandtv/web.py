@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from flask import Flask, Request, redirect, render_template, request
 from markupsafe import escape
 
-from portlandtv import config, distributor, draft, library, review, store
+from portlandtv import config, distributor, draft, library, review
 
 # Show List colours, by entry position; off-list rules are grey
 PALETTE = ("#cfe3ff", "#d6f5d6", "#ffe1c4", "#ecd9ff", "#ffd6e0", "#d4f1f4", "#fff3b0", "#e2e2ff")
@@ -134,9 +134,10 @@ def create_app(service):
         out += [f"Unplayable: {p}" for p in service.unplayable]
         # today's and a generated tomorrow's dropped/flagged Slots and filler
         for date in [service.today, service.today + timedelta(days=1)] if service.today else []:
-            record = store.read_json(service.paths.day(date), {})
-            out += [f"{date}: {p}" for p in record.get("problems") or []]
-            out += [f"Filler never fits: {p}" for p in record.get("never_fits") or []]
+            record = service.records.get(date)
+            if record:
+                out += [f"{date}: {p}" for p in record.problems]
+                out += [f"Filler never fits: {p}" for p in record.never_fits]
         return out
 
     def stream_url():
@@ -154,7 +155,7 @@ def create_app(service):
     def reviewed(raw):
         """-> (the draft's Catalogue, its Review)."""
         prober, found = scan(raw)
-        state = store.read_json(service.paths.state, {"shows": {}})
+        state = service.records.state()
         return found, review.review(raw, found.shows, found.movies, prober.duration, state)
 
     def render(raw, error=None, status=200, preview=False, refused=None):

@@ -52,6 +52,10 @@ _Avoid_: Lineup, rotation
 The 24-hour period, starting at a configured UTC clock time (no daylight-saving changes), over which a Day Schedule runs and Slots stay frozen; its weekday is that of the UTC date it starts on.
 _Avoid_: Calendar day
 
+**Day Record**:
+What the app keeps about a generated Broadcast Day: the item each Slot got, its problems, and the state before and after it, so the day can be regenerated or rebuilt.
+_Avoid_: Log, history
+
 **Filler**:
 Short content that pads a Block so each Repeat starts at its fixed clock time.
 _Avoid_: Padding, bumper
