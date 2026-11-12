@@ -10,7 +10,7 @@ import statistics
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
-from flask import Flask, redirect, render_template, request
+from flask import Flask, Request, redirect, render_template, request
 from markupsafe import escape
 
 from portlandtv import config, distributor, library, slots, store
@@ -206,8 +206,14 @@ def _auto_sort(raw, left):
     entries[:] = [e for i, e in enumerate(entries) if i not in gone]
 
 
+class _Request(Request):
+    # the page posts every grid cell; Werkzeug's default 1000 fields refuses a big schedule (413)
+    max_form_parts = 100_000
+
+
 def create_app(service):
     app = Flask(__name__)
+    app.request_class = _Request
 
     def problems(missing_libs, schedule):
         out = list(schedule)

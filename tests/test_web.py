@@ -176,6 +176,16 @@ class WebTest(unittest.TestCase):
         self.assertIn("kind: movies", text)  # block style, hand-editable
         self.assertIn("length: 8h", text)
 
+    def test_a_big_schedule_still_posts_as_the_browser_sends_it(self):
+        week = {"weekdays": {d: {"show": "Show A"} for d in
+                             ("mon", "tue", "wed", "thu", "fri", "sat", "sun")}}
+        b = self.open({"day_start": "06:00", "day_schedule": [
+            {"length": "1h", "repeat": 1, "slots": [week] * 6} for _ in range(24)]})
+        data = {**b.fields(), "action": "add-lib"}
+        self.assertGreater(len(data), 1000)  # Werkzeug's default limit
+        r = b.client.post("/", data=data, content_type="multipart/form-data")  # as fetch(FormData)
+        self.assertEqual(r.status_code, 200)
+
     def test_problems_lists_generation_error_and_missing_library(self):
         b = self.open()
         self.assertIn("Problems", b.html)
