@@ -24,6 +24,10 @@ _Avoid_: Lineup, rotation
 The Day Schedule, Libraries, Show List and Show Groups as edited in the web UI, before they are saved.
 _Avoid_: Form, pending config
 
+**Review**:
+What the web UI reports about a Draft: each Block's Airings and fill, the Show List's weeks left, and the Draft's problems.
+_Avoid_: Report, validation
+
 **Slot**:
 A position in a Block defined by a rule (e.g. "next episode of Show A"), filled with a concrete item once per Broadcast Day. A **fixed** Slot has one rule all week; a **distributed** Slot has a weekday rule for each weekday.
 _Avoid_: Entry, placeholder

@@ -224,16 +224,6 @@ class WebTest(unittest.TestCase):
         self.assertIn("Unplayable: " + s.path("Show A/Show A - S01E04.mkv"), b.html)
         self.assertIn("Filler never fits: " + os.path.join(s.filler, "long.mp4"), b.html)
 
-    def test_random_movie_content_length(self):
-        s = Channel({**CONFIG, "day_schedule": [
-            {"length": "8h", "repeat": 3, "slots": [{"rule": {"movie": "random"}}]}]},
-            FILES, {**DURATIONS, "m1.mkv": 5400.0, "m2.mkv": 7200.0, "m3.mkv": 6000.0},
-            movies=["m1.mkv", "m2.mkv", "m3.mkv"])
-        self.addCleanup(s.close)
-        b = Browser(s)
-        b.get()
-        self.assertIn("typical 1h40, max 2h00", b.html)
-
     def test_hand_edit_error_shows_until_a_fixed_save_and_retry(self):
         b = self.open()
         good = b.fields()

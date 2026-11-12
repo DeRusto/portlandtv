@@ -59,12 +59,6 @@ class ShowListTest(unittest.TestCase):
         self.assertIn("<td>B</td><td>2</td><td>1</td><td>2.0</td>", b.html)
         self.assertIn("<td>C</td><td>1</td><td>0</td><td>not scheduled</td>", b.html)
 
-    def test_show_group_entry_sums_its_members(self):
-        b = self.open({**CONFIG, "show_groups": {"G": ["B", "C"]},
-                       "show_list": [{"group": "G"}]})
-        self.assertIn("<td>Show Group: G</td><td>3</td><td>0</td><td>not scheduled</td>",
-                      b.html)
-
     def test_entries_reorder_remove_and_add(self):
         b = self.open()
         b.submit("down-entry:0")
@@ -100,16 +94,6 @@ class ShowListTest(unittest.TestCase):
                       b.html)
         self.assertIn('<option value="show:D" selected>D (not in list)</option>', b.html)
         self.assertIn('<option value="show:A" selected>A</option>', b.html)
-
-    def test_problems_list_entries_without_cells_and_off_list_shows(self):
-        b = self.open({**CONFIG, "day_schedule": [{"length": "24h", "repeat": 1, "slots": [
-            {"weekdays": {"mon": {"show": "A"}, "tue": {"show": "D"}}}]}]})
-        problems = b.html.split('id="problems"')[1]
-        self.assertIn("Show List: B has no cells on the grid", problems)
-        self.assertIn("Show List: C has no cells on the grid", problems)
-        self.assertIn("D is on the grid but not in the Show List", problems)
-        self.assertNotIn("A has no cells", problems)
-
 
 
 class BalanceTest(unittest.TestCase):

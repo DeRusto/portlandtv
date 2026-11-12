@@ -4,17 +4,15 @@ Buttons post the whole form with an `action`. Every action except `save` and
 `replace` (Distribute's confirm) only re-renders the edited draft; those two
 validate and write the YAML.
 """
-import collections
 import os
 import re
-import statistics
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from flask import Flask, Request, redirect, render_template, request
 from markupsafe import escape
 
-from portlandtv import config, distributor, draft, library, slots, store
+from portlandtv import config, distributor, draft, library, review, store
 
 # Show List colours, by entry position; off-list rules are grey
 PALETTE = ("#cfe3ff", "#d6f5d6", "#ffe1c4", "#ecd9ff", "#ffd6e0", "#d4f1f4", "#fff3b0", "#e2e2ff")
@@ -25,16 +23,6 @@ def _hm(seconds):
     sign = "−" if seconds < 0 else ""
     seconds = abs(int(seconds))
     return f"{sign}{seconds // 3600}h{seconds % 3600 // 60:02}"
-
-
-def _rule_key(rule):
-    """{show: X} -> 'show:X', the value of a Slot's rule dropdown."""
-    if not rule:
-        return ""
-    if not isinstance(rule, dict) or len(rule) != 1:
-        return f"invalid:{rule}"  # a hand-edited rule; the page still renders so it can be fixed
-    (kind, name), = rule.items()
-    return f"{kind}:{name}"
 
 
 def _form_rule(value):
@@ -167,25 +155,20 @@ def create_app(service):
         shows, _ = library.scan_shows(found, prober)
         return missing, prober, shows, library.scan_movies(found)
 
-    def remaining(raw, shows):
-        """Episodes left per Show List entry; a Show Group sums its members."""
+    def reviewed(raw):
+        """-> (missing Library folders, shows, the draft's Review)."""
+        missing, prober, shows, movies = scan(raw)
         state = store.read_json(service.paths.state, {"shows": {}})
-        return [slots.episodes_left(e, shows, raw.get("show_groups") or {}, state)
-                for e in raw["show_list"]]
-
-    def plan(raw):
-        """New Weekday Rules per distributed Slot; raises distributor.Refused."""
-        return distributor.distribute(raw["show_list"], len(draft.distributed_slots(raw)))
+        return missing, shows, review.review(raw, shows, movies, prober.duration, state)
 
     def render(raw, error=None, status=200, preview=False, refused=None):
         try:
             day_start = config.parse_day_start(raw.get("day_start", "06:00"))
         except config.ConfigError as e:
             error, day_start = error or str(e), config.parse_day_start("06:00")
-        missing, prober, shows, movies = scan(raw)
+        missing, shows, rv = reviewed(raw)
         groups = raw.get("show_groups") or {}
-        entries = [_rule_key(e) for e in raw["show_list"]]
-        eps_left = remaining(raw, shows)
+        entries = [e.key for e in rv.entries]
         colour = {e: PALETTE[i % len(PALETTE)] for i, e in enumerate(entries)}
         choices = ([(f"show:{n}", n) for n in shows]
                    + [(f"group:{n}", f"Show Group: {n}") for n in groups])
@@ -193,56 +176,10 @@ def create_app(service):
         add = [(k, t) for k, t in choices if k not in entries]
         choices = ([(k, t if k in entries else f"{t} (not in list)") for k, t in choices]
                    + [("movie:random", "Random movie")])
-        t = datetime.combine(datetime.min.date(), day_start)
-        blocks, total, schedule = [], 0, []
-        cells = collections.Counter()  # rule key -> cells per week
-        off_list = {}  # off-list shows and Show Groups on distributed cells, in order
-        for n, b in enumerate(raw["day_schedule"], 1):
-            try:
-                length, repeat = config.length_repeat(b)
-            except config.ConfigError:
-                length, repeat = None, 0
-            view = {"raw": b, "airs": [], "slots": []}
-            typical, most = [0] * 7, [0] * 7  # content per weekday
-            if length:
-                total += length * repeat
-                for _ in range(repeat):
-                    view["airs"].append(t.strftime("%H:%M"))
-                    t += timedelta(seconds=length)
-            for m, s in enumerate(b.get("slots") or [], 1):
-                fixed, rules = config.is_fixed(s), config.slot_rules(s)
-                for d, rule in enumerate(rules):
-                    lengths = [x for x in map(prober.duration,
-                                              slots.candidates(rule, shows, movies, groups)) if x]
-                    if lengths:
-                        typical[d] += statistics.median(lengths)
-                        most[d] += max(lengths)
-                keys = [_rule_key(r) for r in rules]
-                cells.update(k for k in keys if k)
-                if not fixed:
-                    off_list.update((k, None) for k in keys
-                                    if k and k not in colour and not k.startswith("movie:"))
-                # cells[d]: that weekday's dropdown value; colours[d]: its Show List colour
-                view["slots"].append({"fixed": fixed, "cells": keys, "colours": [
-                    colour.get(k, OFF_LIST) if k else "" for k in keys]})
-                empty = [day.title() for day, r in zip(config.WEEKDAYS, rules) if not r]
-                if empty and fixed:
-                    schedule.append(f"Block {n} Slot {m} is empty every day: skipped")
-                elif empty:
-                    schedule.append(f"Block {n} Slot {m} is empty on {', '.join(empty)}:"
-                                    " skipped those days")
-            view["fill"] = [{"content": _hm(t), "brk": _hm(length - t) if length else "?",
-                             "over": bool(length) and t > length} for t in typical]
-            over = [day.title() for day, f in zip(config.WEEKDAYS, view["fill"]) if f["over"]]
-            if over:
-                schedule.append(f"Block {n} content runs past its length on {', '.join(over)}")
-            view["over"] = bool(length) and max(most) > length
-            view["typical"], view["max"] = _hm(max(typical)), _hm(max(most))
-            blocks.append(view)
-        schedule += [f"Show List: {names.get(e, e)} has no cells on the grid"
-                     for e in entries if not cells[e]]
-        schedule += [f"{names.get(k, k)} is on the grid but not in the Show List"
-                     for k in off_list]
+        start = datetime.combine(datetime.min.date(), day_start)
+
+        def hhmm(seconds):
+            return (start + timedelta(seconds=seconds)).strftime("%H:%M")
 
         def weeks(n, count):
             return f"{n / count:.1f}" if count else "not scheduled"
@@ -252,46 +189,48 @@ def create_app(service):
             return {"label": names.get(key, label or "— empty"),
                     "colour": colour.get(key, OFF_LIST) if key else "", "changed": changed}
 
-        show_list = [{"key": e, "label": names.get(e, e), "colour": colour[e], "left": n,
-                      "cells": cells[e], "weeks": weeks(n, cells[e])}
-                     for e, n in zip(entries, eps_left)]
+        blocks = []
+        for b, br in zip(raw["day_schedule"], rv.blocks):
+            length, view_slots = br.length, []
+            for fixed, rules in br.slots:
+                keys = [review.rule_key(r) for r in rules]
+                # cells[d]: that weekday's dropdown value; colours[d]: its Show List colour
+                view_slots.append({"fixed": fixed, "cells": keys, "colours": [
+                    colour.get(k, OFF_LIST) if k else "" for k in keys]})
+            blocks.append({
+                "raw": b, "airs": [hhmm(t) for t in br.airs], "slots": view_slots,
+                "fill": [{"content": _hm(t), "brk": _hm(length - t) if length else "?",
+                          "over": bool(length) and t > length} for t in br.typical],
+                "over": bool(length) and max(br.most) > length,
+                "typical": _hm(max(br.typical)), "max": _hm(max(br.most))})
+        show_list = [{"key": e.key, "label": names.get(e.key, e.key), "colour": colour[e.key],
+                      "left": e.left, "cells": e.cells, "weeks": weeks(e.left, e.cells)}
+                     for e in rv.entries]
         # balance view: a column per entry, a segment per show, heights in episodes left
-        state = store.read_json(service.paths.state, {"shows": {}})
-        balance = []
-        for rule, e in zip(raw["show_list"], show_list):
-            members = (groups.get(rule["group"], []) if "group" in rule else [rule["show"]]) \
-                if isinstance(rule, dict) and rule.keys() & {"group", "show"} else []
-            balance.append({**e, "segments": [
-                (m, slots.episodes_left({"show": m}, shows, groups, state)) for m in members]})
-        tallest = max((e["left"] for e in show_list), default=0) or 1
+        balance = [{**row, "segments": e.members} for row, e in zip(show_list, rv.entries)]
+        tallest = max((e.left for e in rv.entries), default=0) or 1
         dialog = None
         if preview:
             try:
-                new = plan(raw)
+                pv = review.preview(raw, rv)
             except distributor.Refused as e:
                 refused = str(e)
             else:
-                rows, after = [], cells.copy()
-                for (n, m, s), rules in zip(draft.distributed_slots(raw), new):
-                    now = [_rule_key(r) for r in config.slot_rules(s)]
-                    then = [_rule_key(r) for r in rules]
-                    after.subtract(k for k in now if k)
-                    after.update(then)
-                    rows.append({"name": f"Block {n} Slot {m}", "now": [cell(k) for k in now],
-                                 "then": [cell(k, k != o) for k, o in zip(then, now)]})
-                dialog = {"rows": rows,
-                          "changed": sum(c["changed"] for r in rows for c in r["then"]),
-                          "weeks": [(e["label"], e["weeks"], weeks(n, after[e["key"]]))
-                                    for e, n in zip(show_list, eps_left)]}
+                dialog = {"rows": [{"name": f"Block {n} Slot {m}", "now": [cell(k) for k in now],
+                                    "then": [cell(k, k != o) for k, o in zip(then, now)]}
+                                   for n, m, now, then in pv.rows],
+                          "changed": pv.changed,
+                          "weeks": [(row["label"], row["weeks"], weeks(e.left, after))
+                                    for row, e, after in zip(show_list, rv.entries, pv.cells)]}
         return render_template(
             "index.html", raw=raw, blocks=blocks, error=error, kinds=config.KINDS,
-            day_start=day_start.strftime("%H:%M"), left=_hm(config.DAY - total),
+            day_start=day_start.strftime("%H:%M"), left=_hm(config.DAY - rv.assigned),
             choices=choices, known={k for k, _ in choices}, add=add, show_list=show_list,
             groups=[{"name": n, "members": ms, "add": [s for s in shows if s not in ms]}
                     for n, ms in groups.items()],
             dialog=dialog, refused=refused, days=[d.title() for d in config.WEEKDAYS],
             stream=stream_url(), balance=balance, tallest=tallest,
-            problems=problems(missing, schedule)), status
+            problems=problems(missing, rv.problems)), status
 
     @app.get("/")
     def index():
@@ -341,7 +280,7 @@ def create_app(service):
                 return render(raw, refused=str(e))
             action = "save"
         if action == "auto-sort":
-            draft.auto_sort(raw, remaining(raw, scan(raw)[2]))
+            draft.auto_sort(raw, [e.left for e in reviewed(raw)[2].entries])
             return render(raw)
         if action not in ("save", "rebuild"):
             _apply(raw, action, request.form)
