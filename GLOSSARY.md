@@ -12,6 +12,10 @@ _Avoid_: Station, feed
 A folder of shows or movies that a Channel draws programming from; a Channel may draw from several.
 _Avoid_: Source, collection
 
+**Catalogue**:
+What a Channel's Libraries hold as scanned: each show's episodes in airing order, the movies and the Filler, plus the files that can't be played and the Library folders that are missing.
+_Avoid_: Index, inventory
+
 **Block**:
 An ordered run of programming items (e.g. 8 hours) that forms the unit of repetition.
 _Avoid_: Playlist, segment

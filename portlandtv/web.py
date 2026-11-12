@@ -145,28 +145,25 @@ def create_app(service):
         return f"http://{f'[{host}]' if ':' in host else host}:8787/public/1/live/stream.m3u8"
 
     def scan(raw):
-        """-> (missing Library folders, prober, shows, movies) for the draft's Libraries."""
-        libs = [lib for lib in raw["libraries"] if lib.get("path")]
-        missing = [lib["path"] for lib in libs if not os.path.isdir(lib["path"])]
-        found = [lib for lib in libs if lib["path"] not in missing]
-        service.measurer.want(found)
+        """-> (prober, Catalogue) of the draft's Libraries."""
+        service.measurer.want(raw["libraries"])
         # lengths measured so far only: a page load never waits on ffprobe
         prober = library.CachedProber(service.prober, service.paths.durations, measure=False)
-        shows, _ = library.scan_shows(found, prober)
-        return missing, prober, shows, library.scan_movies(found)
+        return prober, library.catalogue(raw["libraries"], prober)
 
     def reviewed(raw):
-        """-> (missing Library folders, shows, the draft's Review)."""
-        missing, prober, shows, movies = scan(raw)
+        """-> (the draft's Catalogue, its Review)."""
+        prober, found = scan(raw)
         state = store.read_json(service.paths.state, {"shows": {}})
-        return missing, shows, review.review(raw, shows, movies, prober.duration, state)
+        return found, review.review(raw, found.shows, found.movies, prober.duration, state)
 
     def render(raw, error=None, status=200, preview=False, refused=None):
         try:
             day_start = config.parse_day_start(raw.get("day_start", "06:00"))
         except config.ConfigError as e:
             error, day_start = error or str(e), config.parse_day_start("06:00")
-        missing, shows, rv = reviewed(raw)
+        found, rv = reviewed(raw)
+        shows = found.shows
         groups = raw.get("show_groups") or {}
         entries = [e.key for e in rv.entries]
         colour = {e: PALETTE[i % len(PALETTE)] for i, e in enumerate(entries)}
@@ -230,7 +227,7 @@ def create_app(service):
                     for n, ms in groups.items()],
             dialog=dialog, refused=refused, days=[d.title() for d in config.WEEKDAYS],
             stream=stream_url(), balance=balance, tallest=tallest,
-            problems=problems(missing, rv.problems)), status
+            problems=problems(found.missing, rv.problems)), status
 
     @app.get("/")
     def index():
@@ -280,7 +277,7 @@ def create_app(service):
                 return render(raw, refused=str(e))
             action = "save"
         if action == "auto-sort":
-            draft.auto_sort(raw, [e.left for e in reviewed(raw)[2].entries])
+            draft.auto_sort(raw, [e.left for e in reviewed(raw)[1].entries])
             return render(raw)
         if action not in ("save", "rebuild"):
             _apply(raw, action, request.form)

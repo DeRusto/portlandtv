@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import threading
+from typing import NamedTuple
 
 from portlandtv import store
 
@@ -97,7 +98,7 @@ def _folder(lib):
     return lib["path"]
 
 
-def scan_shows(libraries, prober):
+def _scan_shows(libraries, prober):
     """-> ({show name: [episode paths in order]}, [unplayable paths]) from every `shows`
     Library. Same-named show folders merge; a duplicate (season, episode) is kept once."""
     found, unplayable = {}, []
@@ -129,7 +130,7 @@ def scan_shows(libraries, prober):
     return shows, unplayable
 
 
-def scan_filler(libraries):
+def _scan_filler(libraries):
     """Every video file at any depth of every `filler` Library (no extras filtering)."""
     clips = []
     for lib in libraries:
@@ -142,10 +143,33 @@ def scan_filler(libraries):
     return sorted(clips)
 
 
-def scan_movies(libraries):
+def _scan_movies(libraries):
     """Every non-extra video file at any depth of every `movies` Library, one movie each."""
     return sorted(path for lib in libraries if lib.get("kind") == "movies"
                   for path in _videos(_folder(lib)))
+
+
+class Catalogue(NamedTuple):
+    shows: dict  # show name -> episode paths in airing order
+    movies: list
+    filler: list
+    unplayable: list  # files the prober can't read, left out of the lists above
+    missing: list  # Library folders that aren't there, left out of the scan
+
+
+def catalogue(libraries, prober):
+    """What `libraries` hold, as `prober` (a CachedProber, saved by the caller) measures it.
+    A file is unplayable when its duration is None; 0, not measured yet, is playable.
+    A Library with no path (a new row on the page) is skipped."""
+    libs = [lib for lib in libraries if lib.get("path")]
+    missing = [lib["path"] for lib in libs if not os.path.isdir(lib["path"])]
+    libs = [lib for lib in libs if lib["path"] not in missing]
+    shows, unplayable = _scan_shows(libs, prober)
+    filler, movies = [], []
+    for found, paths in ((filler, _scan_filler(libs)), (movies, _scan_movies(libs))):
+        for path in paths:
+            (unplayable if prober.duration(path) is None else found).append(path)
+    return Catalogue(shows, movies, filler, unplayable, missing)
 
 
 class Measurer:
@@ -194,11 +218,8 @@ class Measurer:
     def _measure(self):
         with self._lock:
             libs, self._wanted = list(self._wanted.values()), {}
-        libs = [lib for lib in libs if os.path.isdir(lib["path"])]
         peek = CachedProber(self.prober, self.cache_path, measure=False)
-        scan_shows(libs, peek)
-        for path in scan_filler(libs) + scan_movies(libs):
-            peek.duration(path)
+        catalogue(libs, peek)
         todo = [p for p in peek.pending if p not in self._failed]
         self.left = len(todo)
         prober = CachedProber(self.prober, self.cache_path)

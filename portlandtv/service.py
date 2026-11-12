@@ -116,13 +116,12 @@ class Service:
         """Generate the Broadcast Day starting on `date` from the state `before` it."""
         record_path = self.paths.day(date)
         prober = library.CachedProber(self.prober, self.paths.durations)
-        shows, self.unplayable = library.scan_shows(cfg["libraries"], prober)
-        filler, movies = [], []
-        for found, paths in ((filler, library.scan_filler(cfg["libraries"])),
-                             (movies, library.scan_movies(cfg["libraries"]))):
-            for path in paths:
-                (found if prober.duration(path) else self.unplayable).append(path)
+        found = library.catalogue(cfg["libraries"], prober)
         prober.save()
+        if found.missing:  # a build never airs a Library silently empty
+            raise FileNotFoundError(f"Library missing: {found.missing[0]}")
+        shows, filler, movies = found.shows, found.filler, found.movies
+        self.unplayable = found.unplayable
         size = self._output_size()
         show_of = {p: name for name, eps in shows.items() for p in eps}
 

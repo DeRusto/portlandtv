@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -197,6 +198,48 @@ class LibraryScanTest(unittest.TestCase):
         s.tick(DAY2)
         self.assertEqual(self.aired(s, "2026-11-10"),
                          ["shows/New Name/Season 1/Show - S01E01.mkv"])
+
+
+class CatalogueTest(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+        for rel in ("shows/Show/Show - S01E01.mkv", "shows/Show/Show - S01E02.mkv",
+                    "movies/Good.mkv", "movies/Bad.mkv", "filler/ok.mp4", "filler/broken.mp4"):
+            path = os.path.join(self.root, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "w").close()
+        self.libs = [{"path": os.path.join(self.root, k), "kind": k}
+                     for k in ("shows", "movies", "filler")]
+
+    def scan(self, libs, measure=True):
+        prober = FakeProber({"Show - S01E02.mkv": None, "Bad.mkv": None, "broken.mp4": None})
+        cache = library.CachedProber(prober, os.path.join(self.root, "durations.json"), measure)
+        return library.catalogue(libs, cache)
+
+    def rel(self, paths):
+        return sorted(os.path.relpath(p, self.root).replace(os.sep, "/") for p in paths)
+
+    def test_unplayable_files_of_every_kind_are_left_out_and_listed(self):
+        found = self.scan(self.libs)
+        self.assertEqual({n: self.rel(e) for n, e in found.shows.items()},
+                         {"Show": ["shows/Show/Show - S01E01.mkv"]})
+        self.assertEqual(self.rel(found.movies), ["movies/Good.mkv"])
+        self.assertEqual(self.rel(found.filler), ["filler/ok.mp4"])
+        self.assertEqual(self.rel(found.unplayable), ["filler/broken.mp4", "movies/Bad.mkv",
+                                                      "shows/Show/Show - S01E02.mkv"])
+
+    def test_files_not_measured_yet_are_playable(self):
+        found = self.scan(self.libs, measure=False)
+        self.assertEqual(len(found.shows["Show"]) + len(found.movies) + len(found.filler), 6)
+        self.assertEqual(found.unplayable, [])
+
+    def test_missing_folders_are_listed_and_empty_paths_skipped(self):
+        gone = os.path.join(self.root, "gone")
+        found = self.scan(self.libs + [{"path": gone, "kind": "shows"},
+                                       {"path": "", "kind": "movies"}])
+        self.assertEqual(found.missing, [gone])
+        self.assertEqual(list(found.shows), ["Show"])
 
 
 if __name__ == "__main__":
