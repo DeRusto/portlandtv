@@ -39,7 +39,8 @@ def _block(length, repeat, slots):
 
 
 def _from_form(form, raw):
-    """The posted form over `raw` (keys the form doesn't edit are kept)."""
+    """The posted form over `raw` (keys the form doesn't edit are kept), and each Show
+    Group's name as saved in the YAML, by its name in the Draft."""
     libs, i = [], 0
     while f"lib{i}.path" in form:
         libs.append({"path": form[f"lib{i}.path"].strip(), "kind": form[f"lib{i}.kind"]})
@@ -60,24 +61,26 @@ def _from_form(form, raw):
     while f"sl{k}" in form:
         entries.append(_form_rule(form[f"sl{k}"]))
         k += 1
-    groups, renames, i = {}, [], 0
+    groups, named, i = {}, [], 0
     while f"g{i}.name" in form:
         members, j = [], 0
         while f"g{i}.m{j}" in form:
             members.append(form[f"g{i}.m{j}"])
             j += 1
+        # was: its name in the Draft so far; saved: its name in the YAML, carried
+        # through every re-render until a save succeeds
         was, name = form.get(f"g{i}.was", ""), form[f"g{i}.name"]
         groups[was or name.strip()] = members
         if was:
-            renames.append((was, name))
+            named.append((was, name, form.get(f"g{i}.saved", was)))
         i += 1
     out = {**raw, "libraries": libs, "day_schedule": blocks, "show_list": entries,
            "show_groups": groups}
-    for was, name in renames:
-        draft.rename_group(out, was, name)
+    saved = {(name.strip() if draft.rename_group(out, was, name) else was): s
+             for was, name, s in named}
     if "day_start" in form:
         out["day_start"] = form["day_start"].strip()
-    return out
+    return out, saved
 
 
 def _apply(raw, action, form):
@@ -160,7 +163,7 @@ def create_app(service):
         state = service.records.state()
         return found, review.review(raw, found.shows, found.movies, prober.duration, state)
 
-    def render(raw, error=None, status=200, preview=False, refused=None):
+    def render(raw, error=None, status=200, preview=False, refused=None, saved=None):
         try:
             day_start = config.parse_day_start(raw.get("day_start", "06:00"))
         except config.ConfigError as e:
@@ -226,7 +229,8 @@ def create_app(service):
             "index.html", raw=raw, blocks=blocks, error=error, kinds=config.KINDS,
             day_start=day_start.strftime("%H:%M"), left=_hm(config.DAY - rv.assigned),
             choices=choices, known={k for k, _ in choices}, add=add, show_list=show_list,
-            groups=[{"name": n, "members": ms, "add": [s for s in shows if s not in ms]}
+            groups=[{"name": n, "saved": (saved or {}).get(n, n), "members": ms,
+                     "add": [s for s in shows if s not in ms]}
                     for n, ms in groups.items()],
             dialog=dialog, refused=refused, days=[d.title() for d in config.WEEKDAYS],
             stream=stream_url(), balance=balance, tallest=tallest,
@@ -269,27 +273,27 @@ def create_app(service):
         origin = request.headers.get("Origin")
         if origin and urlparse(origin).netloc != request.host:
             return "Cross-site edit refused", 403
-        raw = _from_form(request.form, config.read_raw(service.config_path))
+        raw, saved = _from_form(request.form, config.read_raw(service.config_path))
         action = request.form.get("action", "save")
         if action == "distribute":
-            return render(raw, preview=True)
+            return render(raw, saved=saved, preview=True)
         if action == "replace":  # the dialog's confirm: overwrite every distributed cell, save
             try:
                 draft.distribute(raw)
             except distributor.Refused as e:
-                return render(raw, refused=str(e))
+                return render(raw, saved=saved, refused=str(e))
             action = "save"
         if action == "auto-sort":
             draft.auto_sort(raw, [e.left for e in reviewed(raw)[1].entries])
-            return render(raw)
+            return render(raw, saved=saved)
         if action not in ("save", "rebuild"):
             _apply(raw, action, request.form)
-            return render(raw)
+            return render(raw, saved=saved)
         try:
             config.save(service.config_path, raw)
         except config.ConfigError as e:
-            return render(raw, error=str(e), status=400)
-        service.on_save()
+            return render(raw, saved=saved, error=str(e), status=400)
+        service.on_save([(s, n) for n, s in saved.items() if s and s != n])
         if action == "rebuild":
             service.rebuild_today()
         return redirect("/", 303)

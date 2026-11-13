@@ -15,8 +15,8 @@ S0, S1, S2 = ({"shows": {"A": {"path": f"A/{n}.mkv", "key": [1, n]}}} for n in r
 
 def built(state, sequence=("a", "b", "c", "d")):
     return day.Day(program=[], block_items=[list(sequence)], state=state, never_fits=["long"],
-                   problems=["Block 1 Slot 2: gone"], sequence=list(sequence),
-                   slot_fills=[[[{"show": "A"}, "a"]]])
+                   problems=["Block 1 Slot 2: gone"], slot_fills=[[[{"show": "A"}, "a"]]],
+                   cards={}, redraw={}, tail=list(sequence)[-3:], end_cards=["end-1"])
 
 
 class RecordsTest(unittest.TestCase):
@@ -40,7 +40,8 @@ class RecordsTest(unittest.TestCase):
         r = self.records.get(DAY1)
         self.assertEqual((r.state_before, r.state_after, r.slots, r.problems, r.never_fits),
                          (S0, S1, [["a", "b", "c", "d"]], ["Block 1 Slot 2: gone"], ["long"]))
-        self.assertEqual(r.tail, ["b", "c", "d"])  # the last day.AHEAD items
+        self.assertEqual(r.tail, ["b", "c", "d"])
+        self.assertEqual(r.end_cards, ["end-1"])
         self.assertEqual(r.picked, [[[{"show": "A"}, "a"]]])
         self.assertEqual(self.records.state(), S1)
         self.assertEqual(self.records.state_before(DAY2), S1)
@@ -95,6 +96,17 @@ class RecordsTest(unittest.TestCase):
         self.assertEqual((r.state_after, r.tail, r.picked, r.never_fits), (None, None, [], []))
         self.write(self.records.state_path, S2)
         self.assertEqual(self.records.state_before(DAY2), S2)
+
+    def test_rename_group_moves_progress_and_the_rules_rebuild_today_keeps(self):
+        g = {"shows": {}, "groups": {"G": {"show": "B"}}}
+        b = built(g)._replace(slot_fills=[[[{"group": "G"}, "a"], [{"show": "A"}, "b"]]])
+        self.records.commit(DAY1, g, b)
+        self.records.rename_group("G", "Kids", [DAY1])
+        r = self.records.get(DAY1)
+        self.assertEqual(r.state_before["groups"], {"Kids": {"show": "B"}})
+        self.assertEqual(r.state_after["groups"], {"Kids": {"show": "B"}})
+        self.assertEqual(r.picked, [[[{"group": "Kids"}, "a"], [{"show": "A"}, "b"]]])
+        self.assertEqual(self.records.state()["groups"], {"Kids": {"show": "B"}})
 
 
 if __name__ == "__main__":

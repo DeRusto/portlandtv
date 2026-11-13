@@ -41,7 +41,7 @@ def card(source):
 def breaks(program):
     """The next-up card of each Break (no filler here; schedule frames skipped)."""
     return [i["source"] for i in program
-            if i["source"].endswith(".png") and "sched-" not in os.path.basename(i["source"])]
+            if i["source"].endswith(".png") and "up_next" in card(i["source"])]
 
 
 class NextUpCardTest(unittest.TestCase):

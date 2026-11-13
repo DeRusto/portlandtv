@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from tests.harness import PER_AIRING_CARD, Channel, utc
+from tests.harness import Channel, masked, utc
 
 # 24 one-hour Airings of a 1200 s episode: one 2400 s Break each
 HOURLY = {"day_schedule": [{"length": "1h", "repeat": 24, "slots": [
@@ -22,9 +22,8 @@ class FillerTest(unittest.TestCase):
         (apart from the cards looking past their Airing, which differ per Repeat)."""
         program = s.playlist(date)["program"]
         n = len(program) // 24
-        masked = [{**i, "source": "card"} if PER_AIRING_CARD.search(i["source"]) else i
-                  for i in program]
-        self.assertEqual(masked, masked[:n] * 24)
+        cardless = masked(program)
+        self.assertEqual(cardless, cardless[:n] * 24)
         self.assertIn(program[0]["source"], [s.path(e) for e in EPISODES])
         return program[:n]
 

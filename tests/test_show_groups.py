@@ -1,7 +1,7 @@
 """Seam 2: Show Groups are made and edited on the page, like every other YAML key."""
 import unittest
 
-from tests.harness import Channel
+from tests.harness import Channel, utc
 from tests.web_harness import Browser
 
 
@@ -63,6 +63,53 @@ class ShowGroupsTest(unittest.TestCase):
         slots = raw["day_schedule"][0]["slots"]
         self.assertEqual(slots[0], {"rule": {"group": "Kids"}})
         self.assertEqual(slots[1]["weekdays"]["mon"], {"group": "Kids"})
+
+    def test_a_renamed_group_carries_on_where_it_had_got_to(self):
+        s = Channel({"show_groups": {"G": ["A", "B", "C"]}, "show_list": [],
+                     "day_schedule": [{"length": "24h", "repeat": 1,
+                                       "slots": [{"rule": {"group": "G"}}]}]},
+                    eps("A", 1) + eps("B", 1) + eps("C", 3))
+        self.addCleanup(s.close)
+        for d in (9, 10, 11):  # one item a day: A1, B1, C1
+            s.tick(utc(2026, 11, d, 12, 0))
+        s.tick(utc(2026, 11, 12, 5, 30))  # tomorrow (the 12th) is generated too
+        b = Browser(s)
+        b.get()
+        b.submit(changes={"g0.name": "Kids"})
+        first = s.playlist("2026-11-12")["program"][0]["source"]
+        self.assertEqual(s.rel(first), "C/C - S01E02.mkv")
+        self.assertEqual(s.read_json("state.json")["groups"], {"Kids": {"show": "C"}})
+
+    def rename_channel(self, days):
+        """Group G of A, B, C in one Slot, one item a day, generated on `days`."""
+        s = Channel({"show_groups": {"G": ["A", "B", "C"]}, "show_list": [],
+                     "day_schedule": [{"length": "24h", "repeat": 1,
+                                       "slots": [{"rule": {"group": "G"}}]}]},
+                    eps("A", 1) + eps("B", 1) + eps("C", 3))
+        self.addCleanup(s.close)
+        for d in days:
+            s.tick(utc(2026, 11, d, 12, 0))
+        return s
+
+    def test_a_rename_survives_other_edits_before_the_save(self):
+        s = self.rename_channel((9, 10, 11))
+        s.tick(utc(2026, 11, 12, 5, 30))
+        b = Browser(s)
+        b.get()
+        b.submit("auto-sort", {"g0.name": "Kids"})  # re-renders the page, saves nothing
+        b.submit()
+        self.assertEqual(s.read_json("state.json")["groups"], {"Kids": {"show": "C"}})
+        self.assertEqual(s.rel(s.playlist("2026-11-12")["program"][0]["source"]),
+                         "C/C - S01E02.mkv")
+
+    def test_a_rename_before_todays_first_build_carries_on_too(self):
+        s = self.rename_channel((9, 10))  # A1, B1; the 11th not built yet
+        s.clock.now_value = utc(2026, 11, 11, 12, 0)
+        b = Browser(s)
+        b.get()
+        b.submit(changes={"g0.name": "Kids"})
+        self.assertEqual(s.rel(s.playlist("2026-11-11")["program"][0]["source"]),
+                         "C/C - S01E01.mkv")
 
     def test_a_deleted_group_still_in_use_is_a_problem_not_a_crash(self):
         b = self.open()

@@ -72,6 +72,10 @@ _Avoid_: Gap, intermission, commercial break
 Filler the app renders itself from the schedule, such as a "next up" card or a schedule display, as a still or clip.
 _Avoid_: Bumper, interstitial
 
+**End Card**:
+Generated Filler in a Broadcast Day's last Breaks, whose next-up items run into the next Broadcast Day; it airs as a placeholder until that day is generated, then is redrawn.
+_Avoid_: Tail card, closing card
+
 **Repeat**:
 A replay of the exact same items a Block already aired earlier that day, not the next episodes in its series.
 _Avoid_: Rerun, loop, rotation
