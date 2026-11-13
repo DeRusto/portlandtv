@@ -165,6 +165,7 @@
       <div class="group">
         <p><input name="g{{ i }}.name" value="{{ g.name }}" aria-label="Show Group {{ i + 1 }} name">
           <input type="hidden" name="g{{ i }}.was" value="{{ g.name }}">
+          <input type="hidden" name="g{{ i }}.saved" value="{{ g.saved }}">
           <button class="small" name="action" value="del-group:{{ i }}" aria-label="Remove Show Group {{ g.name }}">×</button></p>
         <ol>
           {% for m in g.members %}{% set j = loop.index0 %}

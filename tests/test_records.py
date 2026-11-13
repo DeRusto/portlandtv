@@ -97,6 +97,17 @@ class RecordsTest(unittest.TestCase):
         self.write(self.records.state_path, S2)
         self.assertEqual(self.records.state_before(DAY2), S2)
 
+    def test_rename_group_moves_progress_and_the_rules_rebuild_today_keeps(self):
+        g = {"shows": {}, "groups": {"G": {"show": "B"}}}
+        b = built(g)._replace(slot_fills=[[[{"group": "G"}, "a"], [{"show": "A"}, "b"]]])
+        self.records.commit(DAY1, g, b)
+        self.records.rename_group("G", "Kids", [DAY1])
+        r = self.records.get(DAY1)
+        self.assertEqual(r.state_before["groups"], {"Kids": {"show": "B"}})
+        self.assertEqual(r.state_after["groups"], {"Kids": {"show": "B"}})
+        self.assertEqual(r.picked, [[[{"group": "Kids"}, "a"], [{"show": "A"}, "b"]]])
+        self.assertEqual(self.records.state()["groups"], {"Kids": {"show": "B"}})
+
 
 if __name__ == "__main__":
     unittest.main()

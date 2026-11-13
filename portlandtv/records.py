@@ -68,6 +68,10 @@ class Records:
             r = store.read_json(self.path(date), None)
             if r is not None:
                 renamed(r["state_before"]), renamed(r.get("state_after"))
+                for fills in r.get("picked") or []:  # so "rebuild today" still keeps them
+                    for rule, _ in fills:
+                        if isinstance(rule, dict) and rule.get("group") == old:
+                            rule["group"] = new
                 store.write_json(self.path(date), r)
         store.write_json(self.state_path, renamed(self.state()))
 

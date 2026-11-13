@@ -52,8 +52,10 @@ class Service:
             try:
                 cfg = config.load(self.config_path)
                 today = self._start(cfg).date()
+                # yesterday's record too: an unbuilt today starts from its state_after
+                days = [today + timedelta(days=n) for n in (-1, 0, 1)]
                 for old, new in renames:
-                    self.records.rename_group(old, new, (today, today + timedelta(days=1)))
+                    self.records.rename_group(old, new, days)
                 self.records.unbuild(today + timedelta(days=1))
             except Exception as e:
                 self.error = str(e)
