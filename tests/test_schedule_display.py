@@ -22,7 +22,7 @@ def rows(*entries):
 
 
 def frames(program):
-    return [i for i in program if "sched-" in os.path.basename(i["source"])]
+    return [i for i in program if i["source"].endswith(".png") and "rows" in card(i["source"])]
 
 
 class ScheduleDisplayTest(unittest.TestCase):

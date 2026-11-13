@@ -2,7 +2,6 @@
 and the state JSON, plus a Service wired to fakes."""
 import json
 import os
-import re
 import tempfile
 from datetime import datetime, timezone
 
@@ -12,10 +11,10 @@ from portlandtv.service import Service
 from tests.fakes import FakeClock, FakeFfplayout, FakeProber
 
 
-# cards whose UP NEXT/THEN reach past their Airing, and schedule display frames, so
-# they differ between Repeats; every other source (shared b{block}-{slot} cards
-# included) is identical in each Repeat
-PER_AIRING_CARD = re.compile(r"[/\\](b\d+-a\d+-\d+|end-\d+|sched-b\d+-a\d+-\d+-\d+)\.png$")
+def masked(program):
+    """The program with every card masked: cards looking past their Airing, and schedule
+    display frames, differ between Repeats (test_cards checks which cards are shared)."""
+    return [{**i, "source": "card"} if i["source"].endswith(".png") else i for i in program]
 
 
 def utc(*args):

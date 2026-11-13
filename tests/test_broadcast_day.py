@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from tests.harness import PER_AIRING_CARD, Channel, utc
+from tests.harness import Channel, masked, utc
 
 SHOW_FILES = [
     "Show A/Season 10/Show A - S10E01.mkv",
@@ -49,10 +49,9 @@ class BroadcastDayTest(unittest.TestCase):
         airing = program[:7]
         # verbatim apart from the cards looking past their Airing (here all of them)
         # and the schedule display
-        masked = [{**i, "source": "card"} if PER_AIRING_CARD.search(i["source"]) else i
-                  for i in program]
-        self.assertEqual(masked[7:14], masked[:7])
-        self.assertEqual(masked[14:], masked[:7])
+        cardless = masked(program)
+        self.assertEqual(cardless[7:14], cardless[:7])
+        self.assertEqual(cardless[14:], cardless[:7])
         self.assertEqual(
             [i["source"] for i in airing[0:6:2]],
             [s.path("Show A/Season 1/Show A - S01E01.mkv"),

@@ -4,7 +4,7 @@ import os
 from datetime import timedelta
 from typing import NamedTuple
 
-from portlandtv import day, store
+from portlandtv import store
 
 
 class DayRecord(NamedTuple):
@@ -15,6 +15,7 @@ class DayRecord(NamedTuple):
     never_fits: list  # filler clips longer than every Break that day
     tail: object  # the day's last items, for the previous day's end cards; None if unrecorded
     picked: list  # per Block, per Slot [rule, path or None]; what "rebuild today" keeps
+    end_cards: object  # names of the End Cards the day aired; None if unrecorded
 
 
 class Records:
@@ -37,7 +38,7 @@ class Records:
             return None
         return DayRecord(r.get("slots") or [], r.get("problems") or [], r["state_before"],
                          r.get("state_after"), r.get("never_fits") or [], r.get("tail"),
-                         r.get("picked") or [])
+                         r.get("picked") or [], r.get("end_cards"))
 
     def state_before(self, date):
         """The state a build of `date` starts from. The day before's record wins over
@@ -51,8 +52,8 @@ class Records:
         store.write_json(self.path(date), {
             "slots": built.block_items, "problems": built.problems,
             "state_before": before, "state_after": built.state,
-            "never_fits": built.never_fits, "tail": built.sequence[-day.AHEAD:],
-            "picked": built.slot_fills})
+            "never_fits": built.never_fits, "tail": built.tail,
+            "picked": built.slot_fills, "end_cards": built.end_cards})
         store.write_json(self.state_path, built.state)
 
     def rename_group(self, old, new, dates):

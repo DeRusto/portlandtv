@@ -115,67 +115,31 @@ class Service:
         if found.missing:  # a build never airs a Library silently empty
             raise FileNotFoundError(f"Library missing: {found.missing[0]}")
         shows, filler, movies = found.shows, found.filler, found.movies
+        built = day.build(
+            config.on_weekday(cfg, date.weekday()), date, shows, before, prober,
+            self.paths.card, filler, movies, kept, self.records.get(date - timedelta(days=1)))
         size = self._output_size()
         show_of = {p: name for name, eps in shows.items() for p in eps}
 
-        def describe(path):
-            return cards.describe(path, show_of, movies)
+        def render(path, content):
+            if "items" in content:
+                cards.render(path, [cards.describe(p, show_of, movies) for p in content["items"]],
+                             size)
+            else:  # a schedule display frame
+                cards.render_schedule(path, {**content, "rows": [
+                    {"time": r["time"], **cards.describe(r["path"], show_of, movies),
+                     "state": r["state"]} for r in content["rows"]]}, size)
 
-        built = day.build(
-            config.on_weekday(cfg, date.weekday()), shows, before, prober,
-            self._card_writer(describe, date, size), filler, movies,
-            self._schedule_writer(describe, date, cfg["day_start"], size), kept)
-        sequence = built.sequence
+        # shortcut: cards a rebuild no longer airs stay on disk; prune old days' card
+        # folders if they pile up
+        for path, content in built.cards.items():
+            render(path, content)
         d = date.isoformat()
         # atomic, so ffplayout reloads a whole playlist at its next clip boundary
         store.write_json(os.path.join(self.playlist_dir, d[:4], d[5:7], d + ".json"),
                          {"date": d, "program": built.program})
+        # the day before's End Cards were placeholders until this day's items were known;
+        # redrawn before the commit, so a crash in between just builds the day again
+        for path, content in built.redraw.items():
+            render(path, content)
         self.records.commit(date, before, built)
-        # the previous day's last cards were placeholders until this day's items were known
-        prev = self.records.get(date - timedelta(days=1))
-        if prev and prev.tail is not None:
-            tail = prev.tail
-            prev_date = date - timedelta(days=1)
-            prev_card = self._card_writer(describe, prev_date, size)
-            # end-(n) shows the day's items from len(tail) - n + 1; n reaches len(tail) + 1
-            # when a Break airs before the day's first item (an empty first Block)
-            for n in range(1, min(len(tail) + 1, day.AHEAD) + 1):
-                if os.path.exists(self.paths.card(prev_date, day.end_card(n))):
-                    t = len(tail) - n
-                    prev_card(day.end_card(n), (tail + sequence)[t + 1:t + 1 + day.AHEAD])
-
-    def _card_writer(self, describe, date, size):
-        """card(name, item paths) -> path of that day's card, rendered once per name."""
-        written = set()
-
-        def card(name, paths):
-            path = self.paths.card(date, name)
-            if name not in written:
-                cards.render(path, [describe(p) for p in paths], size)
-                written.add(name)
-            return path
-        return card
-
-    def _schedule_writer(self, describe, date, day_start, size):
-        """schedule(name, rows, upcoming, span) -> that Airing's schedule display frames."""
-        start = datetime.combine(date, day_start, timezone.utc)
-
-        def hhmm(seconds):
-            return (start + timedelta(seconds=seconds)).strftime("%H:%M")
-
-        def schedule(name, rows, upcoming, span):
-            entries = [{"time": hhmm(t), **describe(p),
-                        "state": "aired" if i < upcoming else
-                        "up_next" if i == upcoming else "later"}
-                       for i, (t, p) in enumerate(rows)]
-            pages = [entries[i:i + day.FRAME_ROWS] for i in range(0, len(entries), day.FRAME_ROWS)]
-            paths = []
-            for n, page in enumerate(pages, 1):
-                path = self.paths.card(date, f"sched-{name}-{n}")
-                cards.render_schedule(path, {
-                    "heading": "TODAY ON PORTLAND TV",
-                    "range": f"{hhmm(span[0])}–{hhmm(span[1])} UTC",
-                    "page": f"{n}/{len(pages)}", "rows": page}, size)
-                paths.append(path)
-            return paths
-        return schedule

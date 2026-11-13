@@ -15,8 +15,8 @@ S0, S1, S2 = ({"shows": {"A": {"path": f"A/{n}.mkv", "key": [1, n]}}} for n in r
 
 def built(state, sequence=("a", "b", "c", "d")):
     return day.Day(program=[], block_items=[list(sequence)], state=state, never_fits=["long"],
-                   problems=["Block 1 Slot 2: gone"], sequence=list(sequence),
-                   slot_fills=[[[{"show": "A"}, "a"]]])
+                   problems=["Block 1 Slot 2: gone"], slot_fills=[[[{"show": "A"}, "a"]]],
+                   cards={}, redraw={}, tail=list(sequence)[-3:], end_cards=["end-1"])
 
 
 class RecordsTest(unittest.TestCase):
@@ -40,7 +40,8 @@ class RecordsTest(unittest.TestCase):
         r = self.records.get(DAY1)
         self.assertEqual((r.state_before, r.state_after, r.slots, r.problems, r.never_fits),
                          (S0, S1, [["a", "b", "c", "d"]], ["Block 1 Slot 2: gone"], ["long"]))
-        self.assertEqual(r.tail, ["b", "c", "d"])  # the last day.AHEAD items
+        self.assertEqual(r.tail, ["b", "c", "d"])
+        self.assertEqual(r.end_cards, ["end-1"])
         self.assertEqual(r.picked, [[[{"show": "A"}, "a"]]])
         self.assertEqual(self.records.state(), S1)
         self.assertEqual(self.records.state_before(DAY2), S1)
